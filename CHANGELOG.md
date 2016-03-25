@@ -1,3 +1,6 @@
+# 0.0.2
+
+- Factored out the controlbox connectivity to a separate repo.
 
 # 0.0.1
 
