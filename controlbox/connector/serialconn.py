@@ -1,8 +1,8 @@
 import logging
 import time
 
-from conduit.base import Conduit
-from conduit.watchdog import ResourceAvailableEvent, ResourceUnavailableEvent
+from controlbox.conduit.base import Conduit
+from controlbox.conduit.watchdog import ResourceAvailableEvent, ResourceUnavailableEvent
 from serial import Serial, SerialException
 
 from controlbox.conduit.serial_conduit import SerialConduit, serial_ports, serial_port_info, SerialWatchdog, \
