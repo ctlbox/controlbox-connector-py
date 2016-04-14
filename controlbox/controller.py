@@ -1,36 +1,43 @@
+"""
+Provides a higher level interface to a controlbox instance.
+
+"""
+import threading
 from abc import abstractmethod
 
 from controlbox.protocol.async import FutureResponse
 from controlbox.protocol.controlbox import ControllerProtocolV030, unsigned_byte, signed_byte
 from controlbox.support.events import EventSource
 
-"""
-"""
 
 timeout = 10  # long enough to allow debugging, but not infinite so that build processes will eventually terminate
-seen = []
 
 
 class FailedOperationError(Exception):
-    pass
+    """The requested controlbox operation could not be performed."""
 
 
 class ProfileNotActiveError(FailedOperationError):
-    pass
+    """raised when an operation that requires an active profile is attempted, and no profile is currently active."""
 
 
+# Use a thread local object to maintain the list of objects already traversed when performing a
+# deep equality comparison.
 class CommonEqualityMixin(object):
-    """ define a simple equals implementation for these value objects. """
+    """  a deep equals comparison for value objects. """
+    local = threading.local()
 
     def __eq__(self, other):
+        if not hasattr(CommonEqualityMixin.local, 'seen'):
+            CommonEqualityMixin.local.seen = []
+        seen = CommonEqualityMixin.local.seen
         return hasattr(other, '__dict__') and isinstance(other, self.__class__) \
-            and self._dicts_equal(other)
+            and self._dicts_equal(other, seen)
 
     def __str__(self):
         return super().__str__() + ':' + str(self.__dict__)
 
-    def _dicts_equal(self, other):
-        global seen
+    def _dicts_equal(self, other, seen):
         p = (self, other)
         if p in seen:
             raise ValueError("recursive call " + p)
@@ -48,11 +55,9 @@ class CommonEqualityMixin(object):
         return not self.__eq__(other)
 
 
-class BaseControllerObject(CommonEqualityMixin, EventHook):
-    """ The controller objects are simply proxies to the state that is stored in the embedded controller.
-    Other than an identifier, they are are stateless since the state resides in the controller.
-    (Any state other than the identifier is cached state and may be used in preference to fetching the
-    state from the external controller.)"""
+class BaseControlboxObject(CommonEqualityMixin, EventSource):
+    """ A Controlbox object maintains a reference to the controller, and provides deep quality
+        comparison and a source of events."""
 
     def __init__(self, controller):
         super().__init__()
@@ -68,10 +73,12 @@ class BaseControllerObject(CommonEqualityMixin, EventHook):
         self._controller = controller
 
 
-class ObjectReference(BaseControllerObject):
+class ObjectReference(BaseControlboxObject):
     """ Describes a reference to an object in the controller.
         The reference describes the object's location (container/slot)
-        the class of the object and the arguments used to configure it. """
+        the class of the object and the arguments used to configure it.
+        It is used to describe the objects configured in a profile.
+        """
 
     def __init__(self, controller, container, slot, obj_class, args):
         super().__init__(controller)
@@ -82,6 +89,9 @@ class ObjectReference(BaseControllerObject):
 
     @property
     def id_chain(self):
+        """
+        Retrieves the ID chain of the object that is being referenced.
+        """
         return self.container.id_chain_for(self.slot)
 
     def __str__(self):
@@ -92,26 +102,32 @@ class ObjectReference(BaseControllerObject):
 
 
 class ObjectEvent():
-
+    """
+    Base class for object events.
+    """
     def __init__(self, source, data=None):
         self.source = source
         self.data = data
 
 
-class ObjectCreatedEvent(ObjectEvent):
-    pass
+class ObjectLifetimeEvent():
+    """ Describes events that relate to the lifetime of an object. """
 
 
-class ObjectDeletedEvent(ObjectEvent):
-    pass
+class ObjectCreatedEvent(ObjectLifetimeEvent):
+    """ Event that is posted when an object has been created. """
 
 
-class ControllerObject(BaseControllerObject):
+class ObjectDeletedEvent(ObjectLifetimeEvent):
+    """ Event that is posted when an object has been deleted. """
 
+
+class ControlboxObject(BaseControlboxObject):
+    """  A proxy to an object in a running container. """
     @property
     @abstractmethod
     def id_chain(self):
-        """  all controller objects have an id chain that describes their location and id in the system. """
+        """  all controlbox objects have an id chain that describes their location and id in the system. """
         raise NotImplementedError
 
     def file_object_event(self, type, data=None):
@@ -119,31 +135,42 @@ class ControllerObject(BaseControllerObject):
 
 
 class ContainerTraits:
-
+    """
+    A mixin that describes the expected behavior for container implementations.
+    """
     @abstractmethod
     def id_chain_for(self, slot):
+        """ retrieve the full chain for an ID composed of this container's ID and the given slot """
         raise NotImplementedError
 
-    def item(self, slot):
+    def item(self, slot) -> ControlboxObject:
         """
         Fetches the item at this container's location.
         """
         raise NotImplementedError
 
     def root_container(self):
+        """
+        Retrieve the root container from this container.
+        """
         raise NotImplementedError
 
 
-class Controller:
+class Controlbox:
     pass
 
 
 class TypedObject:
-    type_id = None
+    """ A typed object has a type ID that is used to identify the object type to the controller. """
+    def __init__(self):
+        self.type_id = None
 
 
-class InstantiableObject(ControllerObject, TypedObject):
-
+class InstantiableObject(ControlboxObject, TypedObject):
+    """
+    Base implementation for objects that can be instantiated.
+    It provides class methods for converting between construction parameters in python and the binary representation.
+    """
     def __init__(self, controller):
         super().__init__(controller)
         self.definition = None
@@ -165,15 +192,16 @@ class InstantiableObject(ControllerObject, TypedObject):
         if self.controller:
             self.controller.delete_object(self)
             self.controller = None
+            # todo - should we post events on the controller instead?
             self.fire(ObjectDeletedEvent(self))
 
 
-class ContainedObject(ControllerObject):
+class ContainedObject(ControlboxObject):
     """ An object in a container. Contained objects have a slot that is the id relative to the container
         the object is in. The full id_chain is the container's id plus the object's slot in the container.
     """
 
-    def __init__(self, controller: Controller, container: ContainerTraits, slot: int):
+    def __init__(self, controller: Controlbox, container: ContainerTraits, slot: int):
         # todo - push the profile up to the root container and store controller
         # in that.
         """
@@ -201,18 +229,20 @@ class ContainedObject(ControllerObject):
 
 
 class UserObject(InstantiableObject, ContainedObject):
-
-    def __init__(self, controller: Controller, container: ContainerTraits, slot: int):
+    """ An object that is instantiated in a profile and managed by a container.
+        (In contrast to system objects which are automatically instantiated by the system.)
+    """
+    def __init__(self, controller: Controlbox, container: ContainerTraits, slot: int):
         super(InstantiableObject, self).__init__(controller, container, slot)
         super(ContainedObject, self).__init__(controller)
 
 
 class Container(ContainedObject, ContainerTraits):
-    """ A generic non-root container. """
+    """ A generic non-root container. Being a non-root container, the container is always contained within a parent container. """
 
     def __init__(self, controller, container, slot):
         super().__init__(controller, container, slot)
-        items = {}
+        self.items = {}
 
     def id_chain_for(self, slot):
         return self.id_chain + (slot,)
@@ -224,8 +254,10 @@ class Container(ContainedObject, ContainerTraits):
         return self.container.root_container()
 
 
-class OpenContainerTraits:
-
+class OpenContainerTraits(ContainerTraits):
+    """
+    Traits of a container that allows objects to be added and removed from it.
+    """
     @abstractmethod
     def add(self, obj: ContainedObject):
         raise NotImplementedError
@@ -235,8 +267,7 @@ class OpenContainerTraits:
 
     def notify_added(self, obj: ContainedObject):
         """ Notification from the controller that this object will be added to this container. This is called
-            after the object has been added in the controller
-            """
+            after the object has been added in the controller. """
 
     def notify_removed(self, obj: ContainedObject):
         """ Notification from the controller that this object will be removed from this container. This is called
@@ -245,14 +276,14 @@ class OpenContainerTraits:
 
 
 class RootContainerTraits(ContainerTraits):
-
+    """ Describes the traits of a root container implementation. """
     def id_chain_for(self, slot):
         return slot,
 
     @property
     def id_chain(self):
-        """ Returns the id chain for this root container, which is an empty list.
-        :return: An empty list
+        """ Returns the id chain for this root container, which is an empty sequence.
+        :return: An empty sequence
         :rtype:
         """
         return tuple()
@@ -260,8 +291,12 @@ class RootContainerTraits(ContainerTraits):
     def root_container(self):
         return self
 
+    # todo add a reference to the profile?
+    # when the profile is deactivated we need some way to stop attempts at changing the profile
+    # the profile could still be available in read only mode.
 
-class SystemProfile(BaseControllerObject):
+
+class SystemProfile(BaseControlboxObject):
     """ represents a system profile - storage for a root container and contained objects. """
 
     def __init__(self, controller, profile_id):
@@ -269,6 +304,7 @@ class SystemProfile(BaseControllerObject):
         self.profile_id = profile_id
         self._objects = dict()  # map of object id to object. These objects are proxy objects to
         # objects in the controller
+        # todo - should we store all objects here or store them in each container?
 
     def __eq__(self, other):
         return other is self or \
@@ -276,13 +312,16 @@ class SystemProfile(BaseControllerObject):
                 self) and self.profile_id == other.profile_id and self.controller is other.controller)
 
     def refresh(self, obj):
+        """ retrieve the current proxy for the given object id chain. """
+        # todo - not sure we should do this - an object proxy can have a lifetime longer than profile activation.
+        # when the profile is activated, the object state is synchronized <> controller.
         return self.object_at(obj.id_chain)
 
     def activate(self):
         self.controller.activate_profile(self)
 
     def deactivate(self):
-        if self.is_active:
+        if self.active:
             self.controller.activate_profile(None)
 
     def delete(self):
@@ -292,15 +331,24 @@ class SystemProfile(BaseControllerObject):
 
     @property
     def root(self):
+        """
+        retrieves the root container.
+        raises ProfileNotActive if the profile isn't active.
+        """
+        # todo - rather than raising an exception,
+        # should we still allow enumeration of the object types in an inactive profile,
+        # but not allow their state to be retrieved?
         self._check_active()
         return self._objects[tuple()]
 
     def _check_active(self):
-        if not self.is_active:
+        """ if this profile isn't active raise ProfileNotActiveError. """
+        if not self.active:
             raise ProfileNotActiveError()
 
     @property
-    def is_active(self):
+    def active(self):
+        """ determines if this profile is active. """
         return self.controller.is_active_profile(self)
 
     def object_at(self, id_chain, optional=False):
@@ -311,6 +359,7 @@ class SystemProfile(BaseControllerObject):
 
     @classmethod
     def id_for(cls, p):
+        """ retrieves the id for a given profile object, which is >= 0. If the profile is None, returns -1."""
         return p.profile_id if p else -1
 
     def _deactivate(self):
@@ -331,14 +380,14 @@ class SystemProfile(BaseControllerObject):
             self.controller._instantiate_stub(
                 ref.obj_class, ref.container, ref.id_chain, ref.args)
 
-    def _add(self, obj: ControllerObject):
+    def _add(self, obj: ControlboxObject):
         self._objects[tuple(obj.id_chain)] = obj
 
     def _remove(self, id_chain):
         self._objects.pop(id_chain, None)
 
 
-class RootContainer(RootContainerTraits, OpenContainerTraits, ControllerObject):
+class RootContainer(RootContainerTraits, OpenContainerTraits, ControlboxObject):
     """ A root container is the top-level container in a profile."""
     # todo - add the profile that this object is contained in
     def __init__(self, profile: SystemProfile):
@@ -346,7 +395,7 @@ class RootContainer(RootContainerTraits, OpenContainerTraits, ControllerObject):
         self.profile = profile
 
 
-class SystemRootContainer(RootContainerTraits, ControllerObject):
+class SystemRootContainer(RootContainerTraits, ControlboxObject):
     """ Represents the container for system objects. """
 
     def __init__(self, controller):
@@ -631,38 +680,6 @@ def mask(value, byte_count):
     return r
 
 
-class SystemTime(ReadWriteSystemObject):
-
-    def encoded_len(self):
-        return 6
-
-    def set(self, time=None, scale=None):
-        """ Sets the time and/or scale. If either value is None the existing value is used.
-            Returns a tuple of (time,scale) for the current time and scale. (Same as read() method.)
-        """
-        return self.controller.write_masked_value(self, (time, scale))
-
-    def _encode_mask(self, value, buf_value, buf_mask):
-        time, scale = value
-        buf_value = self._encode(value, buf_value)
-        mask_value = (mask(value[0], 4), mask(value[1], 2))
-        buf_mask = self._encode(mask_value, buf_mask)
-        return buf_value, buf_mask
-
-    def _decode(self, buf):
-        time = LongDecoder()._decode(buf[0:4])
-        scale = ShortDecoder()._decode(buf[4:6])
-        return time, scale
-
-    def _encode(self, value, buf):
-        time, scale = value
-        if time is not None:
-            buf[0:4] = LongEncoder().encode(time)
-        if scale is not None:
-            buf[4:6] = ShortEncoder().encode(scale)
-        return buf
-
-
 class ObjectDefinition:
     """ The definition codec for an object. Converts between the byte array passed to the protocol and higher-level
         argument types used in python code. """
@@ -836,7 +853,7 @@ def is_value_object(obj):
     return obj is not None and hasattr(obj, 'decode') and hasattr(obj, '_update_value')
 
 
-class BaseController(Controller):
+class BaseControlbox(Controlbox):
     """ Provides the operations common to all controllers. The controller and proxy objects provides
        the application view of the external controller.
     """
@@ -942,7 +959,7 @@ class BaseController(Controller):
             the second element is a sequence of profiles.
         """
         future = self.p.list_profiles()
-        data = BaseController.result_from(future)
+        data = BaseControlbox.result_from(future)
         activate = self.profile_for(data[0], True)
         available = tuple([self.profile_for(x) for x in data[1:]])
         return activate, available
@@ -953,7 +970,7 @@ class BaseController(Controller):
 
     def list_objects(self, p: SystemProfile):
         future = self.p.list_profile(p.profile_id)
-        data = BaseController.result_from(future)
+        data = BaseControlbox.result_from(future)
         for d in data:
             yield self._materialize_object_descriptor(*d)
 
@@ -1045,7 +1062,7 @@ class BaseController(Controller):
     @staticmethod
     def _handle_error(fn, *args, allow_fail=False):
         future = fn(*args)
-        error = BaseController.result_from(future)
+        error = BaseControlbox.result_from(future)
         if error < 0 and not allow_fail:
             raise FailedOperationError("errorcode %d" % error)
         return error
@@ -1053,7 +1070,7 @@ class BaseController(Controller):
     @staticmethod
     def _fetch_data_block(fn, *args):
         future = fn(*args)
-        data = BaseController.result_from(future)
+        data = BaseControlbox.result_from(future)
         if not data:
             raise FailedOperationError("no data")
         return data
@@ -1087,7 +1104,7 @@ class BaseController(Controller):
     @staticmethod
     def container_chain_and_id(id_chain):
         """
-        >>> BaseController.container_chain_and_id(b'\x50\x51\x52')
+        >>> BaseControlbox.container_chain_and_id(b'\x50\x51\x52')
         (b'\x50\x51', 82)
         """
         return id_chain[:-1], id_chain[-1]

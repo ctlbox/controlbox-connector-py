@@ -1,5 +1,5 @@
 """
-The original  protocols are asynchronous. They are represented abstractly as two message queues.
+Provides building blocks for implementing asynchronous protocols. They are represented abstractly as two message queues.
 """
 import logging
 import threading
