@@ -2,7 +2,7 @@ from abc import abstractmethod
 
 from controlbox.protocol.async import FutureResponse
 from controlbox.protocol.controlbox import ControllerProtocolV030, unsigned_byte, signed_byte
-from controlbox.support.events import EventHook
+from controlbox.support.events import EventSource
 
 """
 """
@@ -56,7 +56,7 @@ class BaseControllerObject(CommonEqualityMixin, EventHook):
 
     def __init__(self, controller):
         super().__init__()
-        super(EventHook, self).__init__()
+        super(EventSource, self).__init__()
         self._controller = controller
 
     @property
@@ -852,7 +852,7 @@ class BaseController(Controller):
         self._object_types = object_types
         self._profiles = dict()
         self._current_profile = None
-        self.log_events = EventHook()
+        self.log_events = EventSource()
 
     def handle_async_log_values(self, log_info):
         """ Handles the asynchronous logging values from each object.

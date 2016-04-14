@@ -1,9 +1,13 @@
+"""
+Provides an implementation of the control box protocol via the class ControllerProtocolV030.
+"""
+
 from abc import abstractmethod, ABCMeta
 from io import IOBase, BytesIO, BufferedIOBase
 
 from controlbox.conduit.base import Conduit, ConduitStreamDecorator
 from controlbox.protocol.async import BaseAsyncProtocolHandler, FutureResponse, Request, Response, ResponseSupport
-from controlbox.support.events import EventHook
+from controlbox.support.events import EventSource
 
 
 def unsigned_byte(val):
@@ -730,8 +734,8 @@ class ControllerProtocolV030(BaseAsyncProtocolHandler):
         self.next_chunk_output = next_chunk_output
         self.add_unmatched_response_handler(
             ControllerProtocolV030AsyncResponseHandler(self))
-        self.async_log_handlers = EventHook()
-        self.async_events = EventHook()
+        self.async_log_handlers = EventSource()
+        self.async_events = EventSource()
 
     @staticmethod
     def command_id_from_response(response: Response):

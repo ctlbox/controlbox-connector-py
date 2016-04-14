@@ -4,7 +4,7 @@
 
 import logging
 
-from controlbox.support.events import EventHook
+from controlbox.support.events import EventSource
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class ResourceWatchdog:
             The created connection should support the context manager protocol (See PEP 343)
         :type connection_factory: callable
         """
-        self.listeners = EventHook()
+        self.listeners = EventSource()
         self.factory = connection_factory
 
     def is_allowed(self, key, device):

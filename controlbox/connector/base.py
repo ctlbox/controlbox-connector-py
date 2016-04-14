@@ -2,7 +2,7 @@ from abc import abstractmethod
 
 from controlbox.conduit.base import Conduit
 from controlbox.protocol.async import UnknownProtocolError
-from controlbox.support.events import EventHook
+from controlbox.support.events import EventSource
 
 
 class ConnectorError(Exception):
@@ -108,7 +108,7 @@ class AbstractConnector(Connector):
         of the connected device. """
 
     def __init__(self, sniffer=None):
-        self.changed = EventHook()
+        self.changed = EventSource()
         self._base_conduit = None
         self._conduit = None
         self._protocol = None
