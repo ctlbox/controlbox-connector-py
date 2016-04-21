@@ -35,4 +35,3 @@ class ElapsedTime(ReadWriteSystemObject):
         if scale is not None:
             buf[4:6] = ShortEncoder().encode(scale)
         return buf
-

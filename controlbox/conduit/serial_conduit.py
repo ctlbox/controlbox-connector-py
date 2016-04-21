@@ -2,8 +2,6 @@
 Implements a conduit over a serial port.
 """
 
-from __future__ import absolute_import
-
 import logging
 import re
 
@@ -17,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 class SerialConduit(base.Conduit):
+    """
+    A conduit that provides comms via a serial port.
+    """
 
     def __init__(self, ser: Serial):
         self.ser = ser
@@ -39,7 +40,7 @@ class SerialConduit(base.Conduit):
 
 def serial_ports():
     """
-    Returns a generator for all available serial ports
+    Returns a generator for all available serial port device names.
     """
     for port in serial_port_info():
         yield port[0]
@@ -59,13 +60,20 @@ def serial_connector_factory(*args, **kwargs) -> base.Conduit:
     return open_serial_connector
 
 
-known_devices = {
+arduino_devices = {
     (r"%mega2560\.name%.*", r"USB VID\:PID=2341\:0010.*"): "Arduino Mega2560",
     (r"Arduino.*Leonardo.*", r"USB VID\:PID=2341\:8036.*"): "Arduino Leonardo",
-    (r'Arduino Uno.*', r'USB VID:PID=2341:0043.*'): "Arduino Uno",
-    (r"Spark Core.*Arduino.*", r"USB VID\:PID=1D50\:607D.*"): "Spark Core",
-    (r".*Photon.*", r"USB VID\:PID=2d04\:c006.*"): "Particle Photon"
+    (r'Arduino Uno.*', r'USB VID:PID=2341:0043.*'): "Arduino Uno"
 }
+
+particle_devices = {
+    (r"Spark Core.*Arduino.*", r"USB VID\:PID=1D50\:607D.*"): "Spark Core",
+    (r".*Photon.*", r"USB VID\:PID=2d04\:c006.*"): "Particle Photon",
+    (r".*P1.*", r"USB VID\:PID=2d04\:c008.*"): "Particle P1",
+    (r".*Electron.*", r"USB VID\:PID=2d04\:c00a.*"): "Particle Electron"
+}
+
+known_devices = dict((k, v) for d in [arduino_devices, particle_devices] for k, v in d.items())
 
 
 def matches(text, regex):
@@ -78,11 +86,11 @@ def is_recognised_device(p):
         # used to match on name and desc, but under linux only desc is
         # returned, compard
         if matches(desc, d[1]):
-            return True         # to name and desc on windows
+            return True  # to name and desc on windows
     return False
 
 
-def find_arduino_ports(ports):
+def find_recognised_device_ports(ports):
     for p in ports:
         if is_recognised_device(p):
             yield p[0]
@@ -99,7 +107,7 @@ def serial_port_info():
 def detect_port(port):
     if port == "auto":
         all_ports = serial_port_info()
-        ports = tuple(find_arduino_ports(all_ports))
+        ports = tuple(find_recognised_device_ports(all_ports))
         if not ports:
             raise ValueError(
                 "Could not find arduino-compatible device in available ports. %s" % repr(all_ports))
@@ -107,6 +115,7 @@ def detect_port(port):
     return port
 
 
+# todo - this is an application property that apps can override where needed.
 def configure_serial_for_device(s, d):
     """ configures the serial connection for the given device.
     :param s the Serial instance to configure

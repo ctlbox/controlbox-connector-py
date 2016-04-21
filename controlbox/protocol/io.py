@@ -47,7 +47,8 @@ class DequeWriter(DequeStream):
 
 class RWCacheBuffer():
     """ simple implementation of a read and writable buffer. For single-threaded code in test.
-        Use the reader and writer attributes to access a reader and writer - the reader reads what has been put by the writer.
+        Use the reader and writer attributes to access a reader and writer - the reader reads what has been put
+        by the writer.
     """
 
     def __init__(self):

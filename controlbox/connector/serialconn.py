@@ -17,13 +17,13 @@ class SerialConnector(AbstractConnector):
     Implements a connector that communicates with the controller via a Serial link.
     """
 
-    def __init__(self, serial: Serial):
+    def __init__(self, serial: Serial, sniffer):
         """
         Creates a new serial connector.
         :param serial - the serial object defining the serial port to connect to.
                 The serial instance should not be open.
         """
-        super().__init__()
+        super().__init__(sniffer)
         self._serial = serial
         if serial.isOpen():
             raise ValueError("serial object should be initially closed")
@@ -41,10 +41,8 @@ class SerialConnector(AbstractConnector):
             try:
                 s.open()
                 logger.info("opened serial port %s" % self._serial.port)
-                time.sleep(5)
             except SerialException as e:
-                logger.error("error opening serial port %s: %s" %
-                             self._serial.port, e)
+                logger.warn("error opening serial port %s: %s" % self._serial.port, e)
                 raise ConnectorError from e
 
     def _connect(self)->Conduit:
@@ -64,7 +62,7 @@ class SerialConnector(AbstractConnector):
 
 
 class SerialConnectorFactory:
-    """ The factory used to create a connection
+    """ The factory used to create a connection. It's suitable for use with Context Management
     """
 
     def __init__(self, port, device):

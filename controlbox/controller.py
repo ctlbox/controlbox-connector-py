@@ -238,7 +238,8 @@ class UserObject(InstantiableObject, ContainedObject):
 
 
 class Container(ContainedObject, ContainerTraits):
-    """ A generic non-root container. Being a non-root container, the container is always contained within a parent container. """
+    """ A generic non-root container. Being a non-root container, the container is always contained within a parent
+    container. """
 
     def __init__(self, controller, container, slot):
         super().__init__(controller, container, slot)
@@ -420,8 +421,8 @@ class ValueDecoder:
 
 
 class ForwardingDecoder(ValueDecoder):
-    """ Decoder implementation that forwards to another decoder instance. This allows the encoding implementation to be changed
-        at runtime. """
+    """ Decoder implementation that forwards to another decoder instance. This allows the encoding implementation to be
+    changed at runtime. """
     decoder = None
 
     def __init__(self, decoder=None):
@@ -468,8 +469,9 @@ class ValueEncoder:
 
     def _encode_mask(self, value, buf_value, buf_mask):
         """
-        :param value: the value and mask to encode
-        :param bufs: The buffer to encode the value into
+        :param value: the value and mask to encode as a sequence
+        :param buf_value: The buffer to encode the value into
+        :param buf_mask: The buffer to encode the mask into
         :return: a tuple of the encoded value and encoded mask.
         """
         self._encode(value[0], buf_value)
@@ -480,13 +482,13 @@ class ValueEncoder:
         raise NotImplementedError
 
     @staticmethod
-    def maskNone(cls, value):
+    def mask_none(cls, value):
         return value or 0, -1 if value is not None else 0
 
 
 class ForwardingEncoder(ValueEncoder):
-    """ Encoder implementation that forwards to another encoder instance. This allows the encoding implementation to be changed
-        at runtime. """
+    """ Encoder implementation that forwards to another encoder instance. This allows the encoding implementation to
+    be changed at runtime. """
     encoder = None
 
     def __init__(self, encoder=None):
@@ -873,8 +875,8 @@ class BaseControlbox(Controlbox):
 
     def handle_async_log_values(self, log_info):
         """ Handles the asynchronous logging values from each object.
-            This method looks up the corresponding object in the hierarchy and uses that to decode the log data, converting
-            it into a value. The value is then applied to the object.
+            This method looks up the corresponding object in the hierarchy and uses that to decode the log data,
+            converting it into a value. The value is then applied to the object.
         :param values: The log_info (id_chain, log_values)
         """
         p = self._current_profile
@@ -975,11 +977,11 @@ class BaseControlbox(Controlbox):
             yield self._materialize_object_descriptor(*d)
 
     def reset(self, erase_eeprom=False, hard_reset=True):
-        if erase_eeprom:  # return the id back to the pool if the device is being wiped
-            current_id = self.system_id().read()
-            id_service.return_id(current_id)
-        self._handle_error(
-            self.p.reset, 1 if erase_eeprom else 0 or 2 if hard_reset else 0)
+        # todo - move this to application
+        # if erase_eeprom:  # return the id back to the pool if the device is being wiped
+        #     current_id = self.system_id().read()
+        #     id_service.return_id(current_id)
+        self._handle_error(self.p.reset, 1 if erase_eeprom else 0 or 2 if hard_reset else 0)
         if erase_eeprom:
             self._profiles.clear()
             self._current_profile = None

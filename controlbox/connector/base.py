@@ -7,25 +7,24 @@ from controlbox.support.events import EventSource
 
 class ConnectorError(Exception):
     """ Indicates an error condition with a connection. """
-    pass
 
 
 class ConnectionNotConnectedError(ConnectorError):
     """ Indicates a connection is in the disconnected state when a connection is required. """
-    pass
 
 
 class ConnectionNotAvailableError(ConnectorError):
     """ Indicates the connection is not available. """
-    pass
 
 
 class Connector():
-    """ A connector provides the protocol, and conduit the protocol is transported over.
+    """ Maintains a connection with a controller.
+      A connector provides the protocol, and conduit the protocol is transported over.
     """
     @property
     @abstractmethod
     def protocol(self):
+        """ Retrieves the protocol instance associated with this connector. """
         return None
 
     @property
@@ -40,9 +39,10 @@ class Connector():
 
     @property
     @abstractmethod
-    def conduit(self):
+    def conduit(self)->Conduit:
         """
-        Retreives the conduit for this connection. If the connection is not connected, raises NotConnectedError
+        Retrieves the conduit for this connection.
+        If the connection is not connected, raises NotConnectedError
         :return:
         :rtype:
         """
@@ -50,9 +50,11 @@ class Connector():
 
     @property
     @abstractmethod
-    def available(self):
+    def available(self)->bool:
         """ Determines if the underlying resource for this connector is available.
         :return: True if the resource is available and can be connected to.
+        If this resource is connected and available is true, then it means it is a multi-instance
+        resource that can support multiple connections.
         :rtype: bool
         """
         return False
@@ -60,8 +62,10 @@ class Connector():
     @abstractmethod
     def connect(self):
         """
-        Connects this connector to the underlying resource. If the connection is already connected,
-        this method returns silently. Raises ConnectionError if the connection cannot be established.
+        Connects this connector to the underlying resource and determines the protocol.
+        If the connection is already connected,
+        this method returns silently.
+        Raises ConnectionError if the connection cannot be established.
         :return:
         :rtype:
         """
@@ -91,7 +95,7 @@ class ConnectorMonitorListener:
 
 
 class ConnectorMonitor:
-    """ inspects a list of Connectors for changes.
+    """ inspects a list of Connectors, and connects any that are available but not connected.
     """
 
     def __init__(self, connectors: list):
@@ -105,9 +109,12 @@ class ConnectorMonitor:
 
 class AbstractConnector(Connector):
     """ Manages the connection cycle, using a protocol sniffer to determine the protocol
-        of the connected device. """
+        of the connected device.
+        :param: sniffer A callable that takes the conduit and returns a protocol or raises
+            UnknownProtocolError
+        """
 
-    def __init__(self, sniffer=None):
+    def __init__(self, sniffer):
         self.changed = EventSource()
         self._base_conduit = None
         self._conduit = None
@@ -131,9 +138,11 @@ class AbstractConnector(Connector):
             self._base_conduit = self._connect()
             self._conduit = self._base_conduit
             self._protocol = self.sniffer.determine_protocol(self._conduit)
+            if self._protocol is None:
+                raise UnknownProtocolError("Protocol sniffer did not return a protocol.")
         except UnknownProtocolError as e:
             raise ConnectorError() from e
-        finally:
+        finally:   # cleanup
             if not self._protocol:
                 self.disconnect()
 
@@ -167,6 +176,10 @@ class AbstractConnector(Connector):
 
     @abstractmethod
     def _disconnect(self):
+        """ perform any actions needed on disconnection.
+        The base class takes care of disposing the protocol and the conduit, which happens
+        after this method has been called.
+        """
         raise NotImplementedError
 
     @abstractmethod

@@ -3,11 +3,11 @@ import sys
 import platform
 from validate import Validator
 
-from configobj import ConfigObj, Section, SimpleVal, ConfigObjError, flatten_errors
-
+from configobj import ConfigObj, Section, ConfigObjError, flatten_errors
 
 # The default extension for configuration files
 config_extension = '.cfg'
+
 
 def config_flavor(name, flavor=None):
     configname = name if not flavor else name + '.' + flavor

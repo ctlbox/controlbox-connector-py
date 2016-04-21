@@ -1,11 +1,10 @@
 import io
-from collections import deque
 from io import BufferedReader, BytesIO
 
-from hamcrest import assert_that, is_, equal_to, raises, calling
+from hamcrest import assert_that, is_, equal_to, raises, calling, not_
 
-from controlbox.protocol.controlbox import HexToBinaryInputStream, ChunkedHexTextInputStream, BinaryToHexOutputStream, ControllerProtocolV030, \
-    build_chunked_hexencoded_conduit
+from controlbox.protocol.controlbox import HexToBinaryInputStream, ChunkedHexTextInputStream, BinaryToHexOutputStream,\
+    ControllerProtocolV030, build_chunked_hexencoded_conduit
 from controlbox.conduit.base import DefaultConduit
 
 import unittest
@@ -205,27 +204,27 @@ class BrewpiV030ProtocolSendRequestTestCase(unittest.TestCase):
         self.sut = ControllerProtocolV030(self.conduit, lambda: None)
 
     def test_send_read_command_bytes(self):
-        future = self.sut.read_value([1, 2, 3])
+        self.sut.read_value([1, 2, 3])
         self.assert_request_sent(1, 0x81, 0x82, 3, 0)
 
     def test_send_write_command_bytes(self):
-        future = self.sut.write_value([1, 2, 3], [4, 5])
+        self.sut.write_value([1, 2, 3], [4, 5])
         self.assert_request_sent(2, 0x81, 0x82, 3, 2, 4, 5)
 
     def test_send_create_object_command_bytes(self):
-        future = self.sut.create_object([1, 2, 3], 27, [4, 5, 6])
+        self.sut.create_object([1, 2, 3], 27, [4, 5, 6])
         self.assert_request_sent(3, 0x81, 0x82, 3, 27, 3, 4, 5, 6)
 
     def test_send_delete_object_command_bytes(self):
-        future = self.sut.delete_object([1, 2])
+        self.sut.delete_object([1, 2])
         self.assert_request_sent(4, 0x81, 2)
 
     def test_send_list_profile_command_bytes(self):
-        future = self.sut.list_profile(4)
+        self.sut.list_profile(4)
         self.assert_request_sent(5, 4)
 
     def test_send_next_slot_object_command_bytes(self):
-        future = self.sut.next_slot([1, 4])
+        self.sut.next_slot([1, 4])
         self.assert_request_sent(6, 0x81, 4)
 
     def assert_request_sent(self, *args):
@@ -300,6 +299,7 @@ class BrewpiV030ProtocolHexEncodingTestCase(unittest.TestCase):
 
     def test_send_read_command_bytes(self):
         future = self.sut.read_value([1, 2, 3])
+        assert_that(future, is_(not_(None)))
         # NB: this is ascii encoded hex now, not binary data
         self.assert_request_sent(b'01 81 82 03 00 \n')
 

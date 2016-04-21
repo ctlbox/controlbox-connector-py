@@ -20,8 +20,8 @@ def is_executable(file):
 class ProcessConnector(AbstractConnector):
     """ Instantiates a process and connects to it via standard in/out. """
 
-    def __init__(self, image, args=None):
-        super().__init__()
+    def __init__(self, sniffer, image, args=None):
+        super().__init__(sniffer)
         self.image = image
         self.args = args
         self.build_conduit = lambda x: x

@@ -41,14 +41,14 @@ def signed_byte(b):
 def controlbox_protocol_sniffer(line, conduit):
     result = None
     line = line.strip()
-    if line.startswith("[") and line.endswith("]"):
+#    if line.startswith("[") and line.endswith("]"):
 # todo - allow application handling of the first annotation so that it is responsible for creating
 # the protocol instance.
-#        info = VersionParser("{" + line[1:-1] + "}")
-#        if info.major == 0 and info.minor == 3:
-#            if info.revision == 0:
-        result = ControllerProtocolV030(
-            *build_chunked_hexencoded_conduit(conduit))
+#         info = VersionParser("{" + line[1:-1] + "}")
+#         if info.major == 0 and info.minor == 3:
+#             if info.revision == 0:
+#         result = ControllerProtocolV030(
+#             *build_chunked_hexencoded_conduit(conduit))
     return result
 
 

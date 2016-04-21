@@ -171,23 +171,23 @@ class AsyncHandler:
 
     def stop(self):
         self.stop_event.set()
-        if self.background_thread and not self.background_thread is threading.current_thread():
+        if self.background_thread and self.background_thread is not threading.current_thread():
             self.background_thread.join()
         self.background_thread = None
 
 
 class BaseAsyncProtocolHandler:
     """
-    Wraps a conduit in an asynchronous request/response handler. The format for the requests and responses is not defined
-    at this level, but the class takes care of registering requests sent along with a future response and associating
-    incoming responses with the originating request.
+Wraps a conduit in an asynchronous request/response handler. The format for the requests and responses is not defined
+at this level, but the class takes care of registering requests sent along with a future response and associating
+incoming responses with the originating request.
 
-    The primary method to use is async_request(r:Request) which asynchronously sends the request and fetches the
-    response. The returned FutureResponse can be used by the caller to check if the response has arrived or wait
-    for the response.
+The primary method to use is async_request(r:Request) which asynchronously sends the request and fetches the
+response. The returned FutureResponse can be used by the caller to check if the response has arrived or wait
+for the response.
 
-    To handle asynchornous responses (with no originating request), use add_unmatched_response_handler(). Subclasses
-    may instead provide their own asynchronous handler methods that conform to the expected protocol.
+To handle asynchornous responses (with no originating request), use add_unmatched_response_handler(). Subclasses
+may instead provide their own asynchronous handler methods that conform to the expected protocol.
     """
 
     def __init__(self, conduit: Conduit, matcher=None):
@@ -214,7 +214,7 @@ class BaseAsyncProtocolHandler:
         :param fn: A callable that takes a single argument. This function is called with any responses that did not
                 originate from a request (such as logs, events and autonomous actions.)
         """
-        if not fn in self._unmatched:
+        if fn not in self._unmatched:
             self._unmatched.append(fn)
 
     def remove_unmatched_response_handler(self, fn):

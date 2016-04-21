@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class ResourceEvent:
-    """ Notification that a conduit is available.
+    """ Notification that a resource is available.
     :param source   The ResourceWatchdog that posted this event
     :param resource The resource that is available. It has a least a open() method to retrieve the conduit
         and a name property.
