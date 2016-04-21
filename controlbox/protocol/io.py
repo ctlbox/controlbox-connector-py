@@ -79,5 +79,4 @@ def determine_line_protocol(conduit: Conduit, all_sniffers):
             break
     # todo - should we suppress the exception and return None?
     # an unknown device is expected in the application
-    raise UnknownProtocolError(
-        "unable to determine version from '%s'" % l) from error
+    raise UnknownProtocolError("unable to determine version from '%s'" % l) from error
