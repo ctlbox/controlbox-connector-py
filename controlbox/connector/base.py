@@ -1,8 +1,12 @@
+import logging
+import weakref
 from abc import abstractmethod
 
-from controlbox.conduit.base import Conduit
+from controlbox.conduit.base import Conduit, StreamErrorReportingConduit
 from controlbox.protocol.async import UnknownProtocolError
 from controlbox.support.events import EventSource
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectorError(Exception):
@@ -17,29 +21,45 @@ class ConnectionNotAvailableError(ConnectorError):
     """ Indicates the connection is not available. """
 
 
+class ConnectorEvent:
+    """ base class for connector events. """
+    def __init__(self, connector):
+        self.connector = connector
+
+
+class ConnectorConnectedEvent(ConnectorEvent):
+    """ The connector was connected. """
+
+
+class ConnectorDisonnectedEvent(ConnectorEvent):
+    """ The connector was disconnected. """
+
+
 class Connector():
-    """ Maintains a connection with a controller.
-      A connector provides the protocol, and conduit the protocol is transported over.
-    """
-    @property
-    @abstractmethod
-    def protocol(self):
-        """ Retrieves the protocol instance associated with this connector. """
-        return None
+    """ A connector describes an endpoint to which a conduit can be established. """
+
+    def __init__(self):
+        self.events = EventSource()
 
     @property
     @abstractmethod
-    def connected(self):
+    def endpoint(self):
+        """ the endpoint that this connector reaches out to """
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def connected(self) -> bool:
         """
         Determines if this connector is connected to its underlying resource.
         :return: True if this connector is connected to it's underlying resource. False otherwise.
         :rtype: bool
         """
-        return False
+        raise NotImplementedError
 
     @property
     @abstractmethod
-    def conduit(self)->Conduit:
+    def conduit(self) -> Conduit:
         """
         Retrieves the conduit for this connection.
         If the connection is not connected, raises NotConnectedError
@@ -50,14 +70,14 @@ class Connector():
 
     @property
     @abstractmethod
-    def available(self)->bool:
+    def available(self) -> bool:
         """ Determines if the underlying resource for this connector is available.
         :return: True if the resource is available and can be connected to.
         If this resource is connected and available is true, then it means it is a multi-instance
         resource that can support multiple connections.
         :rtype: bool
         """
-        return False
+        raise NotImplementedError
 
     @abstractmethod
     def connect(self):
@@ -69,57 +89,18 @@ class Connector():
         :return:
         :rtype:
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def disconnect(self):
-        pass
-
-
-class ConnectorMonitorListener:
-
-    @staticmethod
-    def connection_available(connector: Connector):
-        """ Notifies this listener that the given connection is available, but not connected. """
-        pass
-
-    @staticmethod
-    def connection_connected(connector: Connector):
-        """ Notifies this listener that the given connection has been established. """
-        pass
-
-    @staticmethod
-    def connection_disconnected(connector: Connector):
-        """ Notifies this listener that the given connection has been disconnected. """
-        pass
-
-
-class ConnectorMonitor:
-    """ inspects a list of Connectors, and connects any that are available but not connected.
-    """
-
-    def __init__(self, connectors: list):
-        self.connectors = connectors
-
-    def scan(self):
-        for connector in self.connectors:
-            if connector.available and not connector.connected:
-                connector.connect()
+        raise NotImplementedError
 
 
 class AbstractConnector(Connector):
-    """ Manages the connection cycle, using a protocol sniffer to determine the protocol
-        of the connected device.
-        :param: sniffer A callable that takes the conduit and returns a protocol or raises
-            UnknownProtocolError
-        """
+    """ Manages the connection cycle to an endpoint."""
 
-    def __init__(self, sniffer):
-        self.changed = EventSource()
-        self._base_conduit = None
-        self._conduit = None
-        self._protocol = None
-        self.sniffer = sniffer
+    def __init__(self):
+        super().__init__()
 
     @property
     def available(self):
@@ -127,36 +108,29 @@ class AbstractConnector(Connector):
 
     @property
     def connected(self):
-        return self._protocol is not None and self._connected()
+        return self._conduit is not None and self._connected()
 
     def connect(self):
         if self.connected:
             return
+
         if not self.available:
             raise ConnectionNotAvailableError
+
         try:
-            self._base_conduit = self._connect()
-            self._conduit = self._base_conduit
-            self._protocol = self.sniffer.determine_protocol(self._conduit)
-            if self._protocol is None:
-                raise UnknownProtocolError("Protocol sniffer did not return a protocol.")
-        except UnknownProtocolError as e:
-            raise ConnectorError() from e
-        finally:   # cleanup
-            if not self._protocol:
+            self._conduit = self._connect()
+            self.events.fire(ConnectorConnectedEvent(self))
+        finally:
+            if not self._conduit:
                 self.disconnect()
 
     def disconnect(self):
-        if not self._conduit:
+        if self._conduit is None:
             return
         self._disconnect()
-        if self._protocol:
-            if hasattr(self._protocol, 'shutdown'):
-                self._protocol.shutdown()
-            self._protocol = None
-        if self._conduit:
-            self._conduit.close()
-            self._conduit = None
+        self._conduit.close()
+        self._conduit = None
+        self.events.fire(ConnectorDisonnectedEvent(self))
 
     @abstractmethod
     def _connect(self) -> Conduit:
@@ -182,20 +156,149 @@ class AbstractConnector(Connector):
         """
         raise NotImplementedError
 
-    @abstractmethod
     def _connected(self):
-        raise NotImplementedError
+        return self._conduit is not None and self._conduit.open()
 
     @property
-    def conduit(self):
+    def conduit(self) -> Conduit:
+        """
+        Retrieves the conduit for this connection.
+        raises ConnectionNotConnectedError if not connected
+        """
         self.check_connected()
         return self._conduit
-
-    @property
-    def protocol(self):
-        self.check_connected()
-        return self._protocol
 
     def check_connected(self):
         if not self.connected:
             raise ConnectionNotConnectedError
+
+
+class DelegateConnector(Connector):
+    """
+    Delegates methods to the delegate connector, unless they are overridden
+    """
+    def __init__(self, delegate):
+        super().__init__()
+        self.delegate = delegate
+
+    @property
+    def available(self) -> bool:
+        return self.delegate.available
+
+    @property
+    def conduit(self) -> Conduit:
+        return self.delegate.conduit
+
+    @property
+    def endpoint(self):
+        return self.delegate.endpoint
+
+    @property
+    def connected(self) -> bool:
+        return self.delegate.connected
+
+    def connect(self):
+        return self.delegate.connect()
+
+    def disconnect(self):
+        return self.delegate.disconnect()
+
+
+class ConnectorContextManager:
+    """
+    Opens the connector on entry, and closes it on exit.
+    """
+
+    def __init__(self, connector: Connector):
+        self.connector = connector
+
+    def __enter__(self):
+        try:
+            logger.debug("Detected device on %s" % self.connector.conduit.target)
+            self.connector.connect()
+            logger.debug("Connected device on %s using protocol %s" %
+                         (self.connector.endpoint, self.connector.protocol))
+        except ConnectorError as e:
+            s = str(e)
+            logger.error("Unable to connect to device on %s - %s" %
+                         (self.connector.endpoint, s))
+            raise e
+
+    def __exit__(self):
+        logger.debug("Disconnected device on %s" % self.connector.endpoint)
+        self.connector.disconnect()
+
+
+class CloseOnErrorConnector(DelegateConnector):
+    """
+    Detects any exceptions thrown reading/writing to the stream and closes the connector.
+    """
+
+    def __init__(self, delegate):
+        super().__init__(delegate)
+        self._conduit = None
+
+    @property
+    def connected(self):
+        return self._conduit is not None
+
+    def connect(self):
+        if self._conduit is None:
+            super().connect()
+            self._conduit = StreamErrorReportingConduit(super().conduit, self.on_stream_exception)
+
+    @property
+    def conduit(self):
+        return self._conduit
+
+    def disconnect(self):
+        self._conduit = None
+        super().disconnect()
+
+    def on_stream_exception(self):
+        self.disconnect()
+
+
+class ProtocolConnector(DelegateConnector):
+    """
+    A connection that must satisfy protocol requirements before being considered open.
+    """
+    def __init__(self, delegate, protocol_sniffer):
+        super().__init__(delegate)
+        self._sniffer = protocol_sniffer
+        self._protocol = None
+        delegate.events.add(weakref.ref(self._delegate_events))
+
+    def _delegate_events(self, event):
+        """ closes this connector when the wrapped connector closes. """
+        if isinstance(event, ConnectorDisonnectedEvent):
+            self.disconnect()
+
+    def connect(self):
+        if self._protocol is None:
+            super().connect()
+            try:
+                self._protocol = self._sniffer(self.conduit)
+                if self._protocol is None:
+                    raise UnknownProtocolError("Protocol sniffer did not return a protocol.")
+            except UnknownProtocolError as e:
+                raise ConnectorError() from e
+            finally:  # cleanup connection on protocol error
+                if not self._protocol:
+                    super().disconnect()
+
+    @property
+    def connected(self):
+        return self._protocol and super().connected
+
+    def disconnect(self):
+        protocol = self._protocol
+        self._protocol = None
+        if protocol is not None:
+            if hasattr(protocol, 'shutdown'):
+                protocol.shutdown()
+        super().disconnect()
+
+    @property
+    def protocol(self):
+        return self._protocol

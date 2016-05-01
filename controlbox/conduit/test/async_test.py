@@ -4,8 +4,6 @@ from queue import Queue, Empty
 
 from controlbox.conduit.base import Conduit
 
-__author__ = 'mat'
-
 
 class AsyncConnectorTest:
     """

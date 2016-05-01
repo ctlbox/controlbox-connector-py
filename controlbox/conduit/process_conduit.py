@@ -1,7 +1,6 @@
 import subprocess
 
 from controlbox.conduit.base import DefaultConduit
-from controlbox.conduit.watchdog import ResourceWatchdog
 
 
 class ProcessConduit(DefaultConduit):
@@ -15,6 +14,10 @@ class ProcessConduit(DefaultConduit):
         super().__init__()
         self.process = None
         self._load(*args)
+
+    @property
+    def target(self):
+        return self.process
 
     def _load(self, *args):
         p = subprocess.Popen(
@@ -40,13 +43,13 @@ class ProcessConduit(DefaultConduit):
             self.process = None
 
 
-class ProcessWatchdog(ResourceWatchdog):
-    """ Monitors a folder for executables that can be instantiated. """
-
-    def __init__(self, dir, pattern, connection_factory):
-        super().__init__(connection_factory)
-        self.dir = dir
-        self.pattern = pattern
-
-    def is_allowed(self, key, device):
-        return self.pattern.match(key) and super().is_allowed(key, device)
+# class ProcessDiscovery(ResourceDiscovery):
+#     """ Monitors a folder for executables that can be instantiated. """
+#
+#     def __init__(self, dir, pattern, connection_factory):
+#         super().__init__(connection_factory)
+#         self.dir = dir
+#         self.pattern = pattern
+#
+#     def is_allowed(self, key, device):
+#         return self.pattern.match(key) and super().is_allowed(key, device)

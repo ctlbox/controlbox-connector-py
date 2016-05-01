@@ -26,6 +26,9 @@ class ProcessConnector(AbstractConnector):
         self.args = args
         self.build_conduit = lambda x: x
 
+    def endpoint(self):
+        return self.image
+
     def _connected(self):
         return self._conduit.open
 

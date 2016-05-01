@@ -2,11 +2,11 @@
 Provides a higher level interface to a controlbox instance.
 
 """
-import threading
 from abc import abstractmethod
 
 from controlbox.protocol.async import FutureResponse
 from controlbox.protocol.controlbox import ControllerProtocolV030, unsigned_byte, signed_byte
+from controlbox.support.mixins import CommonEqualityMixin
 from controlbox.support.events import EventSource
 
 
@@ -19,40 +19,6 @@ class FailedOperationError(Exception):
 
 class ProfileNotActiveError(FailedOperationError):
     """raised when an operation that requires an active profile is attempted, and no profile is currently active."""
-
-
-# Use a thread local object to maintain the list of objects already traversed when performing a
-# deep equality comparison.
-class CommonEqualityMixin(object):
-    """  a deep equals comparison for value objects. """
-    local = threading.local()
-
-    def __eq__(self, other):
-        if not hasattr(CommonEqualityMixin.local, 'seen'):
-            CommonEqualityMixin.local.seen = []
-        seen = CommonEqualityMixin.local.seen
-        return hasattr(other, '__dict__') and isinstance(other, self.__class__) \
-            and self._dicts_equal(other, seen)
-
-    def __str__(self):
-        return super().__str__() + ':' + str(self.__dict__)
-
-    def _dicts_equal(self, other, seen):
-        p = (self, other)
-        if p in seen:
-            raise ValueError("recursive call " + p)
-
-        d1 = self.__dict__
-        d2 = other.__dict__
-        try:
-            seen.append(p)
-            result = d1 == d2
-        finally:
-            seen.pop()
-        return result
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
 
 class BaseControlboxObject(CommonEqualityMixin, EventSource):

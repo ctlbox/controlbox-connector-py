@@ -14,7 +14,7 @@ from controlbox.conduit.base import Conduit
 logger = logging.getLogger(__name__)
 
 
-class UnknownProtocolError(Exception):
+class UnknownProtocolError(IOError):
     pass
 
 

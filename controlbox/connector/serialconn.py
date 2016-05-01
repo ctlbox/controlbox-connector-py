@@ -1,32 +1,38 @@
 import logging
 import time
 
-from controlbox.conduit.base import Conduit
-from controlbox.conduit.watchdog import ResourceAvailableEvent, ResourceUnavailableEvent
 from serial import Serial, SerialException
+from serial.tools.list_ports_common import ListPortInfo
 
-from controlbox.conduit.serial_conduit import SerialConduit, serial_ports, serial_port_info, SerialWatchdog, \
-    configure_serial_for_device
-from controlbox.connector.base import AbstractConnector, ConnectorError
+from controlbox.conduit.base import Conduit
+from controlbox.conduit.discovery import ResourceAvailableEvent, ResourceUnavailableEvent
+from controlbox.conduit.serial_conduit import SerialConduit, serial_ports, serial_port_info, SerialDiscovery
+from controlbox.connector.base import ConnectorError, AbstractConnector
+from controlbox.support.mixins import __str__
 
 logger = logging.getLogger(__name__)
+
+# make ListPortInfo printable
+ListPortInfo.__str__ = __str__
 
 
 class SerialConnector(AbstractConnector):
     """
-    Implements a connector that communicates with the controller via a Serial link.
+    Implements a connector that communicates data via a Serial link.
     """
-
-    def __init__(self, serial: Serial, sniffer):
+    def __init__(self, serial: Serial):
         """
         Creates a new serial connector.
         :param serial - the serial object defining the serial port to connect to.
                 The serial instance should not be open.
         """
-        super().__init__(sniffer)
+        super().__init__()
         self._serial = serial
         if serial.isOpen():
             raise ValueError("serial object should be initially closed")
+
+    def endpoint(self):
+        return self._serial
 
     def _connected(self):
         return self._serial.isOpen()
@@ -47,11 +53,11 @@ class SerialConnector(AbstractConnector):
 
     def _connect(self)->Conduit:
         self._try_open()
-        return SerialConduit(self._serial)
+        conduit = SerialConduit(self._serial)
+        return conduit
 
     def _disconnect(self):
-        self._serial.close()
-        pass
+        """ No special actions needed """
 
     def _try_available(self):
         n = self._serial.name
@@ -61,41 +67,14 @@ class SerialConnector(AbstractConnector):
             return False
 
 
-class SerialConnectorFactory:
-    """ The factory used to create a connection. It's suitable for use with Context Management
-    """
-
-    def __init__(self, port, device):
-        s = Serial()
-        s.setPort(port)
-        configure_serial_for_device(s, device)
-        self.serial = s
-        self.connector = SerialConnector(s)
-
-    def __enter__(self):
-        try:
-            logger.debug("Detected device on %s" % self.serial.port)
-            self.connector.connect()
-            logger.debug("Connected device on %s using protocol %s" %
-                         (self.serial.port, self.connector.protocol))
-        except ConnectorError as e:
-            s = str(e)
-            logger.error("Unable to connect to device on %s - %s" %
-                         (self.serial.port, s))
-            raise e
-
-    def __exit__(self):
-        logger.debug("Disconnected device on %s" % self.serial.port)
-        self.connector.disconnect()
-
-
 def log_connection_events(event):
     if isinstance(event, ResourceAvailableEvent):
-        logger.info("Detected device on %s" % event.source)
         logger.info("Connected device on %s using protocol %s" %
-                    (event.source, event.resource.connector.protocol))
-    if isinstance(event, ResourceUnavailableEvent):
+                    (event.source, event.resource))
+    elif isinstance(event, ResourceUnavailableEvent):
         logger.info("Disconnected device on %s" % event.source)
+    else:
+        logger.warn("Unknown event %s " % event)
 
 
 def monitor():
@@ -104,11 +83,11 @@ def monitor():
     logger.addHandler(logging.StreamHandler())
     logger.info(serial_port_info())
 
-    w = SerialWatchdog(SerialConnectorFactory)
+    w = SerialDiscovery()
     w.listeners += log_connection_events
     while True:
-        time.sleep(0.5)
-        w.check()
+        time.sleep(0.1)
+        w.update()
 
 if __name__ == '__main__':
     monitor()
