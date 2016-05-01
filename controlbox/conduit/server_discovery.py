@@ -81,27 +81,3 @@ class TCPServerDiscovery(PolledResourceDiscovery):
             while not queue.empty():
                 events.append(queue.get())
             self._fire_events(events)
-
-
-def log_connection_events(event):
-    if isinstance(event, ResourceAvailableEvent):
-        logger.info("Connected device on %s using protocol %s" %
-                    (event.source, event.resource))
-    elif isinstance(event, ResourceUnavailableEvent):
-        logger.info("Disconnected device on %s" % event.source)
-    else:
-        logger.warn("Unknown event %s " % event)
-
-
-def monitor():
-    """ A helper function to monitor serial ports for manual testing. """
-    logger.setLevel(logging.INFO)
-    logger.addHandler(logging.StreamHandler())
-
-    w = TCPServerDiscovery("brewpi")
-    w.listeners += log_connection_events
-    while True:
-        w.update()
-
-if __name__ == '__main__':
-    monitor()

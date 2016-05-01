@@ -1,19 +1,12 @@
 import logging
-import time
 
 from serial import Serial, SerialException
-from serial.tools.list_ports_common import ListPortInfo
 
 from controlbox.conduit.base import Conduit
-from controlbox.conduit.discovery import ResourceAvailableEvent, ResourceUnavailableEvent
-from controlbox.conduit.serial_conduit import SerialConduit, serial_ports, serial_port_info, SerialDiscovery
+from controlbox.conduit.serial_conduit import SerialConduit, serial_ports
 from controlbox.connector.base import ConnectorError, AbstractConnector
-from controlbox.support.mixins import __str__
 
 logger = logging.getLogger(__name__)
-
-# make ListPortInfo printable
-ListPortInfo.__str__ = __str__
 
 
 class SerialConnector(AbstractConnector):
@@ -31,6 +24,7 @@ class SerialConnector(AbstractConnector):
         if serial.isOpen():
             raise ValueError("serial object should be initially closed")
 
+    @property
     def endpoint(self):
         return self._serial
 
@@ -48,7 +42,7 @@ class SerialConnector(AbstractConnector):
                 s.open()
                 logger.info("opened serial port %s" % self._serial.port)
             except SerialException as e:
-                logger.warn("error opening serial port %s: %s" % self._serial.port, e)
+                logger.warn("error opening serial port %s: %s" % (self._serial.port, e))
                 raise ConnectorError from e
 
     def _connect(self)->Conduit:
@@ -56,38 +50,6 @@ class SerialConnector(AbstractConnector):
         conduit = SerialConduit(self._serial)
         return conduit
 
-    def _disconnect(self):
-        """ No special actions needed """
-
     def _try_available(self):
         n = self._serial.name
-        try:
-            return n in serial_ports()
-        except SerialException:
-            return False
-
-
-def log_connection_events(event):
-    if isinstance(event, ResourceAvailableEvent):
-        logger.info("Connected device on %s using protocol %s" %
-                    (event.source, event.resource))
-    elif isinstance(event, ResourceUnavailableEvent):
-        logger.info("Disconnected device on %s" % event.source)
-    else:
-        logger.warn("Unknown event %s " % event)
-
-
-def monitor():
-    """ A helper function to monitor serial ports for manual testing. """
-    logger.setLevel(logging.INFO)
-    logger.addHandler(logging.StreamHandler())
-    logger.info(serial_port_info())
-
-    w = SerialDiscovery()
-    w.listeners += log_connection_events
-    while True:
-        time.sleep(0.1)
-        w.update()
-
-if __name__ == '__main__':
-    monitor()
+        return n in serial_ports()

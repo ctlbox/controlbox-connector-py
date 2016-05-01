@@ -31,7 +31,7 @@ class ConnectorConnectedEvent(ConnectorEvent):
     """ The connector was connected. """
 
 
-class ConnectorDisonnectedEvent(ConnectorEvent):
+class ConnectorDisconnectedEvent(ConnectorEvent):
     """ The connector was disconnected. """
 
 
@@ -66,7 +66,7 @@ class Connector():
         :return:
         :rtype:
         """
-        raise ConnectionNotConnectedError
+        raise NotImplementedError
 
     @property
     @abstractmethod
@@ -130,7 +130,7 @@ class AbstractConnector(Connector):
         self._disconnect()
         self._conduit.close()
         self._conduit = None
-        self.events.fire(ConnectorDisonnectedEvent(self))
+        self.events.fire(ConnectorDisconnectedEvent(self))
 
     @abstractmethod
     def _connect(self) -> Conduit:
@@ -271,7 +271,7 @@ class ProtocolConnector(DelegateConnector):
 
     def _delegate_events(self, event):
         """ closes this connector when the wrapped connector closes. """
-        if isinstance(event, ConnectorDisonnectedEvent):
+        if isinstance(event, ConnectorDisconnectedEvent):
             self.disconnect()
 
     def connect(self):

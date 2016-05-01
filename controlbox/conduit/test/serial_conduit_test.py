@@ -193,7 +193,7 @@ class SerialConduitTest(unittest.TestCase):
     def test_function_detect_port_auto_none(self):
         with patch('controlbox.conduit.serial_conduit.serial_port_info') as mock:
             mock.return_value = tuple()
-            assert_that(calling(detect_port).with_args("auto")), raises(ValueError)
+            assert_that(calling(detect_port).with_args("auto"), raises(ValueError))
 
     def test_function_detect_port_auto_some(self):
         with patch('controlbox.conduit.serial_conduit.serial_port_info') as mock:

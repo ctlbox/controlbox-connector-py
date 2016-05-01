@@ -1,11 +1,13 @@
+import logging
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch, DEFAULT
 
 from hamcrest import is_not, assert_that, is_, instance_of
 from zeroconf import ServiceInfo
 
+from controlbox.conduit import server_discovery
 from controlbox.conduit.discovery import ResourceUnavailableEvent, ResourceAvailableEvent
-from controlbox.conduit.server_discovery import TCPServerDiscovery, ZeroconfTCPServerEndpoint
+from controlbox.conduit.server_discovery import TCPServerDiscovery, ZeroconfTCPServerEndpoint, logger
 
 
 class TCPServerDiscoveryTest(unittest.TestCase):
@@ -13,6 +15,18 @@ class TCPServerDiscoveryTest(unittest.TestCase):
     def test_constructor(self):
         sut = TCPServerDiscovery("mysvc", False)
         assert_that(sut.event_queue, is_not(None))
+
+    def test_constructor_zeroconf(self):
+        with patch.multiple(server_discovery, Zeroconf=DEFAULT, ServiceBrowser=DEFAULT) as patches:
+            Zeroconf = patches['Zeroconf']
+            ServiceBrowser = patches['ServiceBrowser']
+            Zeroconf.return_value = object()
+            ServiceBrowser.return_Value = object()
+            sut = TCPServerDiscovery("mysvc")
+            assert_that(sut.zeroconf, is_(Zeroconf.return_value))
+            assert_that(sut.browser, is_(ServiceBrowser.return_value))
+            Zeroconf.assert_called_once()
+            ServiceBrowser.assert_called_once_with(Zeroconf.return_value, "_mysvc._tcp._local.", sut)
 
     def test_resource_for_unknown_service(self):
         sut = TCPServerDiscovery("mysvc", False)
@@ -86,3 +100,35 @@ class TCPServerDiscoveryTest(unittest.TestCase):
         sut.update()
         assert_that(sut.event_queue.empty(), is_(True))
         sut._fire_events.assert_called_once_with(["item1", "item2"])
+
+    def test_update_empty(self):
+        sut = TCPServerDiscovery("mysvc", False)
+        assert_that(sut.event_queue.empty(), is_(True))
+        sut._fire_events = Mock()
+        sut.update()
+        assert_that(sut.event_queue.empty(), is_(True))
+        sut._fire_events.assert_not_called()
+
+
+def log_connection_events(event):
+    if isinstance(event, ResourceAvailableEvent):
+        logger.info("Connected device on %s using protocol %s" %
+                    (event.source, event.resource))
+    elif isinstance(event, ResourceUnavailableEvent):
+        logger.info("Disconnected device on %s" % event.source)
+    else:
+        logger.warn("Unknown event %s " % event)
+
+
+def monitor():
+    """ A helper function to monitor serial ports for manual testing. """
+    logger.setLevel(logging.INFO)
+    logger.addHandler(logging.StreamHandler())
+
+    w = TCPServerDiscovery("brewpi")
+    w.listeners += log_connection_events
+    while True:
+        w.update()
+
+if __name__ == '__main__':
+    monitor()

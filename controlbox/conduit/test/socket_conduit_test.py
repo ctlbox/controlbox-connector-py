@@ -1,8 +1,10 @@
 import socket
 import unittest
-from multiprocessing.context import Process
-from hamcrest import assert_that, is_
 from multiprocessing import Semaphore
+from multiprocessing.context import Process
+from unittest.mock import Mock, call
+
+from hamcrest import assert_that, is_
 
 from controlbox.conduit.socket_conduit import SocketConduit
 
@@ -106,6 +108,50 @@ class ClientSocketTestCase(unittest.TestCase):
         except Exception as e:
             print(e)
             raise e
+
+
+class SocketConduitTest(unittest.TestCase):
+    def test(self):
+        sock = Mock()
+        input = Mock()
+        output = Mock()
+
+        def makefile(mode):
+            if mode == "rb":
+                return input
+            if mode == "wb":
+                return output
+            raise ValueError("unknown mode %s" % mode)
+
+        sock.makefile.side_effect = makefile
+
+        sut = SocketConduit(sock)
+        sock.makefile.assert_has_calls(
+            [call("rb"), call("wb")]
+        )
+        sock.fileno.return_value = 1
+        assert_that(sut.open, is_(True))
+        sock.fileno.return_value = -1
+        assert_that(sut.open, is_(False))
+
+        assert_that(sut.target, is_(sock))
+        assert_that(sut.input, is_(input))
+        assert_that(sut.output, is_(output))
+
+        input.close.assert_not_called()
+        output.close.assert_not_called()
+
+        def shutdown_error(arg):
+            raise OSError("summat bad happened")
+
+        sock.shutdown.side_effect = shutdown_error
+        sut.close()
+
+        input.close.assert_called_once()
+        output.close.assert_called_once()
+        sock.shutdown.assert_called_once_with(socket.SHUT_RDWR)
+        sock.close.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()

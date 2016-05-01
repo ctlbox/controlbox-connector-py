@@ -45,40 +45,40 @@ class SocketConduit(base.Conduit):
             # swallow it - the peer may have closed the socket
 
 
-def client_socket_connector_factory(socket_opts, address):
-    """
-    Factory that produces a client socket connector.
-    :param socket_opts: options for constructing the socket
-    :type socket_opts: tuple
-    :param args: args passed to the socket connection
-    :param kwargs: kwargs passed to the socket connection
-    :return: a callable that creates new connections to via a client socket
-    :rtype: callable
-    """
-    def open_socket_connector():
-        sock = socket.socket(*socket_opts)
-        sock.setblocking(True)
-        sock.connect(address)
-        return SocketConduit(sock)
-
-    return open_socket_connector
-
-
-def server_socket_connector_factory(socket_opts, address):
-    """
-    Factory that produces a socket connector.
-    :param socket_opts: options for constructing the socket
-    :type socket_opts: tuple
-    :param args: args passed to the socket connection
-    :param kwargs: kwargs passed to the socket connection
-    :return: a callable that creates new connections to via a client socket
-    :rtype: callable
-    """
-
-    def open_socket_connector():
-        sock = socket.socket(*socket_opts)
-        sock.setblocking(True)
-        sock.bind(address)
-        return SocketConduit(sock)
-
-    return open_socket_connector
+# def client_socket_connector_factory(socket_opts, address):
+#     """
+#     Factory that produces a client socket connector.
+#     :param socket_opts: options for constructing the socket
+#     :type socket_opts: tuple
+#     :param args: args passed to the socket connection
+#     :param kwargs: kwargs passed to the socket connection
+#     :return: a callable that creates new connections to via a client socket
+#     :rtype: callable
+#     """
+#     def open_socket_connector():
+#         sock = socket.socket(*socket_opts)
+#         sock.setblocking(True)
+#         sock.connect(address)
+#         return SocketConduit(sock)
+#
+#     return open_socket_connector
+#
+#
+# def server_socket_connector_factory(socket_opts, address):
+#     """
+#     Factory that produces a socket connector.
+#     :param socket_opts: options for constructing the socket
+#     :type socket_opts: tuple
+#     :param args: args passed to the socket connection
+#     :param kwargs: kwargs passed to the socket connection
+#     :return: a callable that creates new connections to via a client socket
+#     :rtype: callable
+#     """
+#
+#     def open_socket_connector():
+#         sock = socket.socket(*socket_opts)
+#         sock.setblocking(True)
+#         sock.bind(address)
+#         return SocketConduit(sock)
+#
+#     return open_socket_connector

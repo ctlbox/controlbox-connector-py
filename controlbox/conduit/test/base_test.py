@@ -1,10 +1,11 @@
 import unittest
-from unittest.mock import Mock, PropertyMock
+from unittest.mock import Mock, PropertyMock, patch
 
 from hamcrest import is_, assert_that, raises, calling
 from io import IOBase
 
-from controlbox.conduit.base import ConduitDecorator, ConduitStreamDecorator, DefaultConduit, Conduit, ConduitFactory
+from controlbox.conduit.base import ConduitDecorator, ConduitStreamDecorator, DefaultConduit, Conduit, ConduitFactory, \
+    StreamErrorReportingConduit
 
 
 class ConduitTest(unittest.TestCase):
@@ -79,6 +80,11 @@ class ConduitStreamDecoratorTest(unittest.TestCase):
         sut._wrap_input = Mock(return_value=io2)
         assert_that(sut.input, is_(io2))
         sut._wrap_input.assert_called_once_with(io)
+        sut._wrap_input.reset_mock()
+
+        # method not called a second time
+        assert_that(sut.input, is_(io2))
+        sut._wrap_input.assert_not_called()
 
     def test_output_calls_wrap_on_decorated_output(self):
         mock = Mock()
@@ -89,6 +95,10 @@ class ConduitStreamDecoratorTest(unittest.TestCase):
         sut._wrap_output = Mock(return_value=io2)
         assert_that(sut.output, is_(io2))
         sut._wrap_output.assert_called_once_with(io)
+
+        # method not called a second time
+        assert_that(sut.output, is_(io2))
+        sut._wrap_output.assert_not_called()
 
     def test_immediate_close(self):
         mock = Mock()
@@ -162,3 +172,26 @@ class ConduitFactoryTest(unittest.TestCase):
     def test_call(self):
         f = ConduitFactory()
         assert_that(f, raises(NotImplementedError))
+
+
+class StreamErrorReportingConduitTest(unittest.TestCase):
+    def test_constructor(self):
+        conduit = Mock()
+        handler = Mock()
+        sut = StreamErrorReportingConduit(conduit, handler)
+        assert_that(sut.handler, is_(handler))
+        assert_that(sut.decorate, is_(conduit))
+
+    def test_wraps_streams(self):
+        conduit = Mock()
+        handler = Mock()
+        sut = StreamErrorReportingConduit(conduit, handler)
+        with patch("controlbox.conduit.base.make_exception_notify_proxy") as fn:
+            input = Mock()
+            sut._wrap_input(input)
+            fn.assert_called_once_with(input, handler)
+
+        with patch("controlbox.conduit.base.make_exception_notify_proxy") as fn:
+            output = Mock()
+            sut._wrap_output(output)
+            fn.assert_called_once_with(output, handler)

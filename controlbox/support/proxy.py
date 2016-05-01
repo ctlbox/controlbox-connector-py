@@ -48,9 +48,6 @@ class MethodWrappingProxy(object):
         self._target = target
 
     def __getattribute__(self, name):
-        if name in ("_wrapper", "_target"):
-            return object.getattr(self, name)
-
         target = object.__getattribute__(self, "_target")
         attr = target.__getattribute__(name)
         if isinstance(attr, types.MethodType):

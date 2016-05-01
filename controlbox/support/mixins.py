@@ -1,6 +1,24 @@
 import threading
 
 
+def quote(val):
+    return "'"+val+"'" if val is not None else "None"
+
+
+class StringerMixin:
+
+    def __str__(self):
+        """
+        outputs the base class string representation and the object dictionary
+        in key sorted order
+        :return:
+        """
+        return super().__str__() + ':' + self._sorted_items_string()
+
+    def _sorted_items_string(self):
+        return "{"+", ".join([("'"+str(key))+"'"+": "+(quote(val)) for key, val in sorted(self.__dict__.items())])+"}"
+
+
 class CommonEqualityMixin(object):
     """  a deep equals comparison for value objects. """
     local = threading.local()
@@ -12,11 +30,8 @@ class CommonEqualityMixin(object):
         return hasattr(other, '__dict__') and isinstance(other, self.__class__) \
             and self._dicts_equal(other, seen)
 
-    def __str__(self):
-        return super().__str__() + ':' + str(self.__dict__)
-
     def _dicts_equal(self, other, seen):
-        p = (self, other)
+        p = (id(self), id(other))
         if p in seen:
             raise ValueError("recursive call " + p)
 
@@ -33,11 +48,11 @@ class CommonEqualityMixin(object):
         return not self.__eq__(other)
 
 
-def add_method(target, method, name=None):
-    if name is None:
-        name = method.__name__
-    setattr(target, name, method)
-
-
-def __str__(self):
-    return str(self.__dict__)
+# def add_method(target, method, name=None):
+#     if name is None:
+#         name = method.__name__
+#     setattr(target, name, method)
+#
+#
+# def __str__(self):
+#     return str(self.__dict__)

@@ -34,10 +34,20 @@ class TestTarget:
 class MethodWrappingProxyTest(unittest.TestCase):
 
     def test_proxy_behaves_the_same(self):
-        p = MethodWrappingProxy(TestTarget(), no_op_method_wrapper())
+        target = TestTarget()
+        wrapper = no_op_method_wrapper()
+        p = MethodWrappingProxy(target, wrapper)
         self.assertEqual(p.someFunc(10), 52)
         self.assertEqual(p.delegateFunc(10), 52)
         self.assertEqual(p.a, 10)
+
+        # no _target attribute available externally
+        success = False
+        try:
+            target = p._target
+        except AttributeError:
+            success = True
+        assert_that(success, is_(True))
 
     def test_proxy_wrap_exception(self):
         mock = Mock()
