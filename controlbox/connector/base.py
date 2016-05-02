@@ -5,6 +5,7 @@ from abc import abstractmethod
 from controlbox.conduit.base import Conduit, StreamErrorReportingConduit
 from controlbox.protocol.async import UnknownProtocolError
 from controlbox.support.events import EventSource
+from controlbox.support.mixins import CommonEqualityMixin
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class ConnectionNotAvailableError(ConnectorError):
     """ Indicates the connection is not available. """
 
 
-class ConnectorEvent:
+class ConnectorEvent(CommonEqualityMixin):
     """ base class for connector events. """
     def __init__(self, connector):
         self.connector = connector
@@ -101,6 +102,7 @@ class AbstractConnector(Connector):
 
     def __init__(self):
         super().__init__()
+        self._conduit = None
 
     @property
     def available(self):
@@ -204,29 +206,29 @@ class DelegateConnector(Connector):
         return self.delegate.disconnect()
 
 
-class ConnectorContextManager:
-    """
-    Opens the connector on entry, and closes it on exit.
-    """
-
-    def __init__(self, connector: Connector):
-        self.connector = connector
-
-    def __enter__(self):
-        try:
-            logger.debug("Detected device on %s" % self.connector.conduit.target)
-            self.connector.connect()
-            logger.debug("Connected device on %s using protocol %s" %
-                         (self.connector.endpoint, self.connector.protocol))
-        except ConnectorError as e:
-            s = str(e)
-            logger.error("Unable to connect to device on %s - %s" %
-                         (self.connector.endpoint, s))
-            raise e
-
-    def __exit__(self):
-        logger.debug("Disconnected device on %s" % self.connector.endpoint)
-        self.connector.disconnect()
+# class ConnectorContextManager:
+#     """
+#     Opens the connector on entry, and closes it on exit.
+#     """
+#
+#     def __init__(self, connector: Connector):
+#         self.connector = connector
+#
+#     def __enter__(self):
+#         try:
+#             logger.debug("Detected device on %s" % self.connector.conduit.target)
+#             self.connector.connect()
+#             logger.debug("Connected device on %s using protocol %s" %
+#                          (self.connector.endpoint, self.connector.protocol))
+#         except ConnectorError as e:
+#             s = str(e)
+#             logger.error("Unable to connect to device on %s - %s" %
+#                          (self.connector.endpoint, s))
+#             raise e
+#
+#     def __exit__(self):
+#         logger.debug("Disconnected device on %s" % self.connector.endpoint)
+#         self.connector.disconnect()
 
 
 class CloseOnErrorConnector(DelegateConnector):
@@ -289,7 +291,7 @@ class ProtocolConnector(DelegateConnector):
 
     @property
     def connected(self):
-        return self._protocol and super().connected
+        return self._protocol is not None and super().connected
 
     def disconnect(self):
         protocol = self._protocol

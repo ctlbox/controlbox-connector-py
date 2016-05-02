@@ -8,14 +8,15 @@ Serial Resource connector turns the resource into a Serial instance, and then in
 
 """
 import logging
-from datetime import datetime
+from datetime import time
 
 from serial import Serial
 
 from controlbox.conduit.discovery import ResourceAvailableEvent, ResourceUnavailableEvent, PolledResourceDiscovery
 from controlbox.conduit.serial_conduit import SerialDiscovery
 from controlbox.conduit.server_discovery import TCPServerDiscovery, ZeroconfTCPServerEndpoint
-from controlbox.connector.base import Connector, ProtocolConnector, CloseOnErrorConnector, ConnectorError
+from controlbox.connector.base import Connector, ProtocolConnector, CloseOnErrorConnector, ConnectorError, \
+    ConnectorConnectedEvent, ConnectorDisconnectedEvent
 from controlbox.connector.serialconn import SerialConnector
 from controlbox.connector.socketconn import SocketConnector
 from controlbox.support.events import EventSource
@@ -24,9 +25,19 @@ logger = logging.getLogger(__name__)
 
 
 class ManagedConnection:
-    """ maintains an association between a resource and the connector used to access the device, and
+    """ maintains an association between a resource and the connector used to access the endpoint, and
      notifies an event source when the connection is opened and closed.
     The connection is managed by calling maintain().
+
+    Fires ConnectorConnectedEvent and ConnectorDisconnectedEvent as the connection state changes.
+
+    :param: resource    The resource corresponding to the connector. This is used only
+        for logging/information.
+    :param: connector   The connector to the endpoint to maintain. If this is closed,
+        this managed connection attempts to open it after retry_preiod.
+    :param: retry_period    How often to try opening the connection when it's closed
+    :param: events          event source to post the resource events when the connection
+        opens and closed.
      """
     def __init__(self, resource, connector: Connector, retry_period, events):
         self.resource = resource
@@ -35,29 +46,28 @@ class ManagedConnection:
         self.retry_period = retry_period
         self.events = events
 
-    def open(self, current_time):
+    def _open(self, current_time):
         connector = self.connector
+        self.last_opened = current_time
         if not connector.connected:
             try:
-                self.last_opened = current_time
                 connector.connect()
-                if connector.connected:
-                    self.events.fire(ResourceAvailableEvent(self, connector))
+                self.events.fire(ConnectorConnectedEvent(self.connector))
             except ConnectorError as e:
-                logger.warn("Unable to connect to device %s: %s" % self.resource, e)
+                logger.warn("Unable to connect to device %s: %s" % (self.resource, e))
 
     def close(self):
         was_connected = self.connector.connected
         self.connector.disconnect()
-        if was_connected and not self.connector.connected:
-            self.events.fire(ResourceUnavailableEvent(self, self.connector))
+        if was_connected:
+            self.events.fire(ConnectorDisconnectedEvent(self.connector))
 
     def maintain(self, current_time):
         if self._needs_retry(current_time):
-            open(current_time)
+            self._open(current_time)
 
     def _needs_retry(self, current_time):
-        return self.last_opened is None or (current_time - self.last_opened) > self.retry_period
+        return self.last_opened is None or ((current_time - self.last_opened) >= self.retry_period)
 
 
 class ControllerConnectionManager:
@@ -65,9 +75,9 @@ class ControllerConnectionManager:
     Keeps track of the resources available for potential controllers, and attempts to open them
     at regular intervals.
     """
-    retry_period = 30  # seconds
 
-    def __init__(self):
+    def __init__(self, retry_period=30):
+        self.retry_period = retry_period
         self._connections = dict()
         self.events = EventSource()
 
@@ -96,7 +106,7 @@ class ControllerConnectionManager:
     def connections(self):
         return dict(self._connections)
 
-    def update(self, current_time=datetime.now):
+    def update(self, current_time=time):
         """
         updates all managed connections on this manager.
         """
@@ -104,7 +114,7 @@ class ControllerConnectionManager:
             try:
                 managed_connection.maintain(current_time())
             except Exception as e:
-                logger.error("unexpected exception %s on %s, closing." % e, managed_connection)
+                logger.error("unexpected exception %s on %s, closing." % (e, managed_connection))
                 managed_connection.close()
 
 

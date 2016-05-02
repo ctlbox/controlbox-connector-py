@@ -1,0 +1,168 @@
+from time import time
+from unittest import TestCase
+from unittest.mock import Mock, MagicMock
+
+from hamcrest import assert_that, equal_to, is_not, is_, empty, instance_of
+from controlbox.connector.base import Connector, ConnectorConnectedEvent, ConnectorError, ConnectorDisconnectedEvent
+from controlbox.facade import ControllerConnectionManager, ManagedConnection
+
+
+class ManagedConnectionTest(TestCase):
+    def test_constructor(self):
+        events = Mock()
+        resource = Mock()
+        connector = Mock()
+        sut = ManagedConnection(resource, connector, 5, events)
+        assert_that(sut.resource, is_(resource))
+        assert_that(sut.connector, is_(connector))
+        assert_that(sut.events, is_(events))
+        assert_that(sut.last_opened, is_(None))
+        assert_that(sut.retry_period, is_(5))
+
+    def test_retry_connect(self):
+        sut = ManagedConnection(object(), Connector(), 5, object())
+        assert_that(sut._needs_retry(None), is_(True))
+        start = time()
+        sut.last_opened = start
+        assert_that(sut._needs_retry(start), is_(False))
+        assert_that(sut._needs_retry(start+5), is_(True))
+
+    def test_maintain_not_connected(self):
+        connector = Mock()
+        connector.connected = False
+        events = Mock()
+        sut = ManagedConnection(object(), connector, 5, events)
+        time = 50
+        sut.maintain(time)
+        assert_that(sut.last_opened, is_(50))
+        connector.connect.assert_called_once()
+        events.fire.assert_called_with(ConnectorConnectedEvent(connector))
+
+    def test_maintain_not_connected_connect_exception(self):
+        connector = Mock()
+        connector.connected = False
+        connector.connect.side_effect = ConnectorError()
+        events = Mock()
+        sut = ManagedConnection(object(), connector, 5, events)
+        time = 50
+        sut.maintain(time)
+        assert_that(sut.last_opened, is_(50))
+        connector.connect.assert_called_once()
+        events.fire.assert_not_called()
+
+    def test_maintain_nconnected(self):
+        connector = Mock()
+        connector.connected = True
+        events = Mock()
+        sut = ManagedConnection(object(), connector, 5, events)
+        time = 50
+        sut.maintain(time)
+        assert_that(sut.last_opened, is_(50))
+        connector.connect.assert_not_called()
+        events.fire.assert_not_called()
+
+    def test_close_connected(self):
+        connector = Mock()
+        connector.connected = True
+        events = Mock()
+        sut = ManagedConnection(object(), connector, 5, events)
+        sut.close()
+        connector.disconnected.assert_called_once()
+        events.fire.assert_called_with(ConnectorDisconnectedEvent(connector))
+
+    def test_close_disconnected(self):
+        connector = Mock()
+        connector.connected = False
+        events = Mock()
+        sut = ManagedConnection(object(), connector, 5, events)
+        sut.close()
+        connector.disconnected.assert_not_called()
+        events.fire.assert_not_called()
+
+
+class ControllerConnectionManagerTest(TestCase):
+
+    def test_construction(self):
+        sut = ControllerConnectionManager()
+        assert_that(sut.connections, is_(equal_to(dict())))
+        assert_that(sut.events, is_not(None))
+
+    def test_add_listener(self):
+        listener = Mock()
+        sut = ControllerConnectionManager()
+        sut.events += listener
+        listener.assert_not_called()
+
+    def test_connected(self):
+        """ mocks a connected resource and validates that the manager creates
+        a managed connection"""
+        listener = Mock()
+        sut = ControllerConnectionManager()
+        sut.events += listener
+        connector = Mock()
+        mc = Mock()
+        sut._new_managed_connection = Mock(return_value=mc)
+        mc.connector = connector
+        # when
+        sut.connected("res", connector)
+        # then
+        listener.assert_not_called()
+        assert_that(sut.connections.get("res"), is_(mc))
+        # reconnecting to the same doesn't create a new manager
+        sut._new_managed_connection.reset_mock()
+        sut.connected("res", connector)
+        sut._new_managed_connection.assert_not_called()
+
+    def test_new_managed_connection(self):
+        sut = ControllerConnectionManager()
+        res = MagicMock()
+        connector = Mock()
+        mc = sut._new_managed_connection(res, connector, sut.retry_period, sut.events)
+        assert_that(mc.last_opened, is_(None))
+        assert_that(mc.resource, is_(res))
+        assert_that(mc.retry_period, is_(30))
+        assert_that(mc.connector, is_(connector))
+        assert_that(mc.events, is_(sut.events))
+        # in order to validate the _new_managed_connection contract we need to validate
+        # all the methods of the returned object, since in principle any object could be returned
+        # here we short-circuit that and instead explicitly test the type, so that
+        # we can keep validating the ManagedConnection instance int the managed connection tests
+        assert_that(mc, is_(instance_of(ManagedConnection)))
+
+    def test_disconnected(self):
+        listener = Mock()
+        sut = ControllerConnectionManager()
+        sut.events += listener
+        connection = Mock()
+        connection.close = Mock()
+        sut._connections["res"] = connection
+        # when
+        sut.disconnected("res")
+        # then
+        # listener is not called by the manager - it's invoked by the ManagedConnection object
+        listener.assert_not_called()
+        assert_that(sut.connections, is_(empty()))
+        connection.close.assert_called_once()
+
+    def test_disconnected_not_known(self):
+        sut = ControllerConnectionManager()
+        listener = Mock()
+        sut.events += listener
+        sut.disconnected("myconn")
+        listener.assert_not_called()
+
+    def test_update(self):
+        sut = ControllerConnectionManager()
+        mc1 = Mock()
+        mc2 = Mock()
+        sut._connections = {1: mc1, 2: mc2}
+        mc1.maintain.side_effect = ConnectorError("blah")
+        time = Mock(return_value=100)
+
+        # when
+        sut.update(time)
+        # time updated on each iteration of the loop
+        assert_that(time.call_count, is_(2))
+        mc1.maintain.assert_called_once_with(100)
+        mc2.maintain.assert_called_once_with(100)
+        mc1.maintain.assert_not_called()
