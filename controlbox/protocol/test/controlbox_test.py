@@ -4,7 +4,7 @@ from io import BufferedReader, BytesIO
 from hamcrest import assert_that, is_, equal_to, raises, calling, not_
 
 from controlbox.protocol.controlbox import HexToBinaryInputStream, ChunkedHexTextInputStream, BinaryToHexOutputStream,\
-    ControllerProtocolV030, build_chunked_hexencoded_conduit
+    ControlboxProtocolV1, build_chunked_hexencoded_conduit
 from controlbox.conduit.base import DefaultConduit
 
 import unittest
@@ -201,7 +201,7 @@ class BrewpiV030ProtocolSendRequestTestCase(unittest.TestCase):
 
     def setUp(self):
         self.conduit = DefaultConduit(BytesIO(), BytesIO())
-        self.sut = ControllerProtocolV030(self.conduit, lambda: None)
+        self.sut = ControlboxProtocolV1(self.conduit, lambda: None)
 
     def test_send_read_command_bytes(self):
         self.sut.read_value([1, 2, 3])
@@ -245,7 +245,7 @@ class BrewpiV030ProtocolDecodeResponseTestCase(unittest.TestCase):
         self.output_buffer = RWCacheBuffer()
         self.conduit = DefaultConduit(
             self.input_buffer.reader, self.output_buffer.writer)
-        self.sut = ControllerProtocolV030(self.conduit)
+        self.sut = ControlboxProtocolV1(self.conduit)
 
     def test_send_read_command_bytes(self):
         future = self.sut.read_value([1, 2, 3])
@@ -291,7 +291,7 @@ class BrewpiV030ProtocolHexEncodingTestCase(unittest.TestCase):
         self.conduit = DefaultConduit(
             self.input_buffer.reader, self.output_buffer.writer)
         text = build_chunked_hexencoded_conduit(self.conduit)
-        self.sut = ControllerProtocolV030(*text)
+        self.sut = ControlboxProtocolV1(*text)
 
     def tearDown(self):
         self.input_buffer.close()

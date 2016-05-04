@@ -1,3 +1,7 @@
+"""
+a library of classes for potential reuse in different controlbox applications.
+"""
+
 from controlbox.controller import ReadWriteSystemObject, mask, LongDecoder, ShortDecoder, ShortEncoder, LongEncoder
 
 

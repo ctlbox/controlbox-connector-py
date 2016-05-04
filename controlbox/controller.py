@@ -5,7 +5,7 @@ Provides a higher level interface to a controlbox instance.
 from abc import abstractmethod
 
 from controlbox.protocol.async import FutureResponse
-from controlbox.protocol.controlbox import ControllerProtocolV030, unsigned_byte, signed_byte
+from controlbox.protocol.controlbox import ControlboxProtocolV1, unsigned_byte, signed_byte
 from controlbox.support.mixins import CommonEqualityMixin
 from controlbox.support.events import EventSource
 
@@ -1099,7 +1099,7 @@ class BaseControlbox(Controlbox):
         return ObjectReference(self, container, slot, obj_class, args)
 
     @property
-    def p(self) -> ControllerProtocolV030:  # short-hand and type hint
+    def p(self) -> ControlboxProtocolV1:  # short-hand and type hint
         return self._connector.protocol
 
     def _check_current_profile(self) -> SystemProfile:

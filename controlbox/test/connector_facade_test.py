@@ -4,7 +4,8 @@ from unittest import TestCase
 from unittest.mock import Mock, MagicMock
 from hamcrest import assert_that, equal_to, is_not, is_, empty, instance_of
 from controlbox.connector.base import Connector, ConnectorError
-from controlbox.facade import ControllerConnectionManager, ManagedConnection, ControllerDiscoveryFacade, logger
+from controlbox.connector_facade import ControllerConnectionManager, ManagedConnection, ControllerDiscoveryFacade, \
+    logger
 
 
 class ManagedConnectionTest(TestCase):
@@ -168,6 +169,7 @@ class ControllerConnectionManagerTest(TestCase):
 
 
 def monitor():
+    """ logs the connected devices. A dummy protocol sniffer is used. """
     logging.root.setLevel(logging.INFO)
     logging.root.addHandler(logging.StreamHandler())
 

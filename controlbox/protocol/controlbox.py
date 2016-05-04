@@ -688,7 +688,7 @@ def interleave(*args):
     return bytes([x for z in zip(*args) for x in z])
 
 
-class ControllerProtocolV030AsyncResponseHandler:
+class ControlboxProtocolV1AsyncResponseHandler:
 
     def __init__(self, controller):
         self.controller = controller
@@ -698,7 +698,7 @@ class ControllerProtocolV030AsyncResponseHandler:
             self.controller.handle_async_response(x)
 
 
-class ControllerProtocolV030(BaseAsyncProtocolHandler):
+class ControlboxProtocolV1(BaseAsyncProtocolHandler):
     """ Implements the controlbox hex-encoded binary protocol.
     """
 
@@ -732,8 +732,7 @@ class ControllerProtocolV030(BaseAsyncProtocolHandler):
         self.output = conduit.output
         self.next_chunk_input = next_chunk_input
         self.next_chunk_output = next_chunk_output
-        self.add_unmatched_response_handler(
-            ControllerProtocolV030AsyncResponseHandler(self))
+        self.add_unmatched_response_handler(ControlboxProtocolV1AsyncResponseHandler(self))
         self.async_log_handlers = EventSource()
         self.async_events = EventSource()
 
@@ -805,7 +804,7 @@ class ControllerProtocolV030(BaseAsyncProtocolHandler):
     def build_bytearray(*args):
         """
         constructs a byte array from position arguments.
-        >>> ControllerProtocolV030.build_bytearray(90, b"\x42\x43", 95)
+        >>> ControlboxProtocolV1.build_bytearray(90, b"\x42\x43", 95)
         bytearray(b'ZBC_')
         """
         b = bytearray()
@@ -856,7 +855,7 @@ class ControllerProtocolV030(BaseAsyncProtocolHandler):
 
     @staticmethod
     def _create_response_decoder(cmd_id):
-        decoder_type = ControllerProtocolV030.decoders.get(cmd_id)
+        decoder_type = ControlboxProtocolV1.decoders.get(cmd_id)
         if not decoder_type:
             raise ValueError("no decoder for cmd_id %d" % cmd_id)
         return decoder_type()
