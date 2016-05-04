@@ -32,7 +32,7 @@ class SocketConnectorTest(unittest.TestCase):
             assert_that(conduit, is_(instance_of(SocketConduit)))
             assert_that(conduit.target, is_(socket.socket.return_value))
             socket.socket.assert_called_once_with(*sock_args)
-            sock_instance.connect.assert_called_once_with(*connect_args)
+            sock_instance.connect.assert_called_once_with(connect_args)
 
     def test_unsuccessful_connect(self):
         sock_args = (1, 2)
@@ -48,7 +48,7 @@ class SocketConnectorTest(unittest.TestCase):
 
             assert_that(calling(sut._connect), raises(ConnectorError))
             socket.socket.assert_called_once_with(*sock_args)
-            sock_instance.connect.assert_called_once_with(*connect_args)
+            sock_instance.connect.assert_called_once_with(connect_args)
 
     def test_available(self):
         sut = SocketConnector(1, 2)

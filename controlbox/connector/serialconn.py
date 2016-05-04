@@ -50,6 +50,9 @@ class SerialConnector(AbstractConnector):
         conduit = SerialConduit(self._serial)
         return conduit
 
+    def _disconnect(self):
+        pass
+
     def _try_available(self):
         n = self._serial.name
         return n in serial_ports()

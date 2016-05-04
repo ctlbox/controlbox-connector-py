@@ -130,8 +130,7 @@ def detect_port(port):
         all_ports = serial_port_info()
         ports = tuple(find_recognised_device_ports(all_ports))
         if not ports:
-            raise ValueError(
-                "Could not find a compatible device in available ports. %s" % repr(all_ports))
+            raise ValueError("Could not find a compatible device in available ports. %s" % repr(all_ports))
         return ports[0]
     return port
 

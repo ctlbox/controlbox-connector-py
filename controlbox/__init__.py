@@ -21,4 +21,19 @@ Controller Connections
   attempts to open any that are not presently open. This allows for outages in the underlying
   connection. The manager tries to maintain a connection until the endpoint is no longer
   available (e.g. serial port no longer present, mDNS TTL expired and not refreshed.)
+
+
+More rough notes:
+
+- Connectors can be arranged as a chain of aggregates, with outer connectors wrapping
+inner connectors. For example, ProtocolConnector wraps a connector and decodes the protocol.
+CloseOnErrorConnector wraps a connector and closes it on error.
+
+On connecting, the inner connector is connected first, all the way down the chain.
+On disconnecting, the outer connector is disconnected first, and then on to the next inner connector.
+
+Outer connectors listen to their inner connectors for disconnected events, in case of
+spontaneous disconnection (e.g. a stream error.)
+
+
 """

@@ -6,6 +6,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# todo - when the network interface goes down, it cause the ServerBrowser thread to exit
+# In order to keep the server browser running, it should be tested and re-instantiated from time to time
+
 
 class ZeroconfTCPServerEndpoint(TCPServerEndpoint):
     """
@@ -31,9 +34,11 @@ class TCPServerDiscovery(PolledResourceDiscovery):
         """
         super().__init__()
         self.event_queue = Queue()
+        fqn = TCPServerDiscovery.qualify_service_type(service_subtype)
+        logger.info("listening for zeroconf services of type %s " % fqn)
         if use_zeroconf:
             self.zeroconf = Zeroconf()
-            self.browser = ServiceBrowser(self.zeroconf, TCPServerDiscovery.qualify_service_type(service_subtype), self)
+            self.browser = ServiceBrowser(self.zeroconf, fqn, self)
         else:
             self.zeroconf = None
             self.browser = None
@@ -44,7 +49,7 @@ class TCPServerDiscovery(PolledResourceDiscovery):
         >>> TCPServerDiscovery.qualify_service_type("abc")
         "_abc._tcp._local."
         """
-        return "_" + service_subtype + "._tcp._local."
+        return "_" + service_subtype + "._tcp.local."
 
     @staticmethod
     def resource_for_service(zeroconf, type, name):
@@ -62,16 +67,18 @@ class TCPServerDiscovery(PolledResourceDiscovery):
         """
         info = self.resource_for_service(zeroconf, svc_type, svc_name)
         if info:
-            self.event_queue.put(event(self, info))
+            self.event_queue.put(event(self, svc_name, info))
         else:
             logger.warn("no info for service %s type %s" % (svc_name, svc_type))
 
     def remove_service(self, zeroconf, type, name):
         """ notification from the service browser that a service has been removed """
+        logger.info("service unavailable: %s " % name)
         self._publish(ResourceUnavailableEvent, zeroconf, type, name)
 
     def add_service(self, zeroconf, type, name):
         """ notification from the service browser that a service has been added """
+        logger.info("service available: %s " % name)
         self._publish(ResourceAvailableEvent, zeroconf, type, name)
 
     def update(self):
@@ -81,3 +88,25 @@ class TCPServerDiscovery(PolledResourceDiscovery):
             while not queue.empty():
                 events.append(queue.get())
             self._fire_events(events)
+
+
+class MyListener(object):
+    def remove_service(self, zeroconf, type, name):
+        print("Service %s removed" % (name,))
+
+    def add_service(self, zeroconf, type, name):
+        info = zeroconf.get_service_info(type, name)
+        print("Service %s added, service info: %s" % (name, info))
+
+
+def monitor():
+    zeroconf = Zeroconf()
+    listener = MyListener()
+    ServiceBrowser(zeroconf, "_brewpi._tcp.local.", listener)
+    try:
+        input("Press enter to exit...\n\n")
+    finally:
+        zeroconf.close()
+
+if __name__ == '__main__':
+    monitor()

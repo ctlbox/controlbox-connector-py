@@ -40,12 +40,16 @@ class SocketConnector(AbstractConnector):
     def _connect(self)->Conduit:
         try:
             sock = socket.socket(*self._sock_args)
-            sock.connect(*self._connect_args)
+            sock.connect(self._connect_args)
+            sock.setblocking(0)
             logger.info("opened socket to %s" % str(self._connect_args))
             return SocketConduit(sock)
         except socket.error as e:
             logger.warn("error opening socket to %s: %s" % (self._connect_args, e))
             raise ConnectorError from e
+
+    def _disconnect(self):
+        pass
 
     def _try_available(self):
         # could try pinging the host?

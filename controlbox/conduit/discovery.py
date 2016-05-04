@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class ResourceEvent(CommonEqualityMixin):
     """ Notification about a resource. """
-    def __init__(self, source, resource):
+    def __init__(self, source, key, resource):
         """
         :param source   The ResourceDiscovery that posted this event
         :param resource An identifier for the resource that is available.
@@ -25,6 +25,7 @@ class ResourceEvent(CommonEqualityMixin):
         are provided.
         """
         self.source = source
+        self.key = key
         self.resource = resource
 
 
@@ -67,9 +68,11 @@ class PolledResourceDiscovery(ResourceDiscovery):
 
     def attached(self, key, device):
         """template method for subclasses to process a new resource"""
+        logger.info("available device: %s" % key)
 
     def detached(self, key, device):
         """template method for subclasses to process a new resource"""
+        logger.info("unavailable device: %s" % key)
 
     def _attach(self, key, device):
         self.attached(key, device)
@@ -99,9 +102,9 @@ class PolledResourceDiscovery(ResourceDiscovery):
             previous = self.previous.get(handle, None)
             if self._one_is_none(current, previous) or not self._device_eq(current, previous):
                 not previous or events.append(ResourceUnavailableEvent(
-                    self, self._detach(handle, previous)))
+                    self, *self._detach(handle, previous)))
                 not current or events.append(ResourceAvailableEvent(
-                    self, self._attach(handle, current)))
+                    self, *self._attach(handle, current)))
         return events
 
     @staticmethod

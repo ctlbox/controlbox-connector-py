@@ -15,11 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 class UnknownProtocolError(IOError):
-    pass
+    """
+    Error raised by a protocol sniffer when it doesn't recognize the stream protocol.
+    """
 
 
 def tobytes(arg):
     """
+    Converts a string to bytes
     >>> tobytes("abc")
     b'abc'
     """
@@ -47,7 +50,7 @@ class FutureValue(Future):
 
 
 class Request:
-    """ encapsulates the request data. """
+    """ Encapsulates the request data.  A request is a message sent from the client to the server. """
 
     @abstractmethod
     def to_stream(self, file: IOBase):
@@ -60,12 +63,12 @@ class Request:
     def response_keys(self):
         """ retrieves an iterable over keys that are used to correlate requests with corresponding responses. """
         raise NotImplementedError
-        # todo - maybe just use simple iteration looking for a matching
-        # response?
+        # todo - maybe just use simple iteration looking for a matching response?
 
 
 class Response:
-    """ Represents a response from a controller method.
+    """ Represents a response. A response is a message sent from the server to the client.
+        Some responses may be unsolicited - have no originating request from a known client.
     """
 
     @abstractmethod
@@ -80,7 +83,7 @@ class Response:
     @property
     def response_key(self):
         """
-        :return: a key that can be used to pair this response with a previous request.
+        :return: a key that can be used to pair this response with a previously sent request.
         """
         raise NotImplementedError
 
@@ -116,10 +119,15 @@ class FutureResponse(FutureValue):
 
 
 class ResponseSupport(Response):
-    """ Provides a simple implementation for the value attribute, and request_key.
+    """ A simple implementation of Response that
+        stores the value attribute and request_key.
     """
 
     def __init__(self, request_key=None, value=None):
+        """
+        :param request_key the unique key that is used to identify the request.
+        :param the value of the response.  The value is defined by the protocol.
+        """
         self._request_key = request_key
         self._value = value
 
@@ -142,25 +150,38 @@ class ResponseSupport(Response):
         return self._request_key
 
 
-class AsyncHandler:
-    """ continually runs a given function. exceptions are logged and posted to a given handler """
+class AsyncLoop:
+    """ Continually runs a given function on a background thread.
+        Exceptions are logged and posted to a given handler
+        The background thread is registered as a daemon.
+    """
 
     def __init__(self, fn: Callable, args=()):
+        """
+        :param fn the function to run
+        :param args arguments to pass to fn
+        """
         self.exception_handler = lambda x: logger.exception(x)
         self.fn = fn
         self.args = args
-        self.stop_event = None
+        self.stop_event = None   # condition variable that signifies the background thread should stop
         self.background_thread = None
 
     def start(self):
+        """
+        Starts the background thread.
+        """
         if self.background_thread is None:
-            t = threading.Thread(target=self._loop, args=self.args)
+            t = threading.Thread(target=self._loop)
             t.setDaemon(True)
             self.stop_event = threading.Event()
             self.background_thread = t
             t.start()
 
     def _loop(self):
+        """ The processing loop for the background thread.
+             Invokes the callable for as long as the stop signal is not received.
+        """
         stop = self.stop_event
         while not stop.is_set():
             try:
@@ -170,10 +191,11 @@ class AsyncHandler:
         logger.info("background thread exiting")
 
     def stop(self):
-        self.stop_event.set()
-        if self.background_thread and self.background_thread is not threading.current_thread():
-            self.background_thread.join()
-        self.background_thread = None
+        if self.stop_event is not None:
+            self.stop_event.set()
+            if self.background_thread and self.background_thread is not threading.current_thread():
+                self.background_thread.join()
+            self.background_thread = None
 
 
 class BaseAsyncProtocolHandler:
@@ -186,7 +208,7 @@ The primary method to use is async_request(r:Request) which asynchronously sends
 response. The returned FutureResponse can be used by the caller to check if the response has arrived or wait
 for the response.
 
-To handle asynchornous responses (with no originating request), use add_unmatched_response_handler(). Subclasses
+To handle unsolicited responses (with no originating request), use add_unmatched_response_handler(). Subclasses
 may instead provide their own asynchronous handler methods that conform to the expected protocol.
     """
 
@@ -201,7 +223,7 @@ may instead provide their own asynchronous handler methods that conform to the e
 
     def start_background_thread(self):
         if self.async_thread is None:
-            self.async_thread = AsyncHandler(self.read_response_async)
+            self.async_thread = AsyncLoop(self.read_response_async)
             self.async_thread.start()
 
     def stop_background_thread(self):

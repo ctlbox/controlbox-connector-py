@@ -96,9 +96,14 @@ class ConduitStreamDecorator(ConduitDecorator):
         return self._output
 
     def close(self):
-        out = self._output
-        if out is not None:
-            self._output.close()
+        output = self._output
+        input = self._input
+        self._output = None
+        self._input = None
+        if output is not None:
+            output.close()
+        if input is not None:
+            input.close()
         super().close()
 
     @abstractmethod

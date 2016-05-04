@@ -8,15 +8,14 @@ Serial Resource connector turns the resource into a Serial instance, and then in
 
 """
 import logging
-from datetime import time
+import time
 
 from serial import Serial
 
 from controlbox.conduit.discovery import ResourceAvailableEvent, ResourceUnavailableEvent, PolledResourceDiscovery
 from controlbox.conduit.serial_conduit import SerialDiscovery
 from controlbox.conduit.server_discovery import TCPServerDiscovery, ZeroconfTCPServerEndpoint
-from controlbox.connector.base import Connector, ProtocolConnector, CloseOnErrorConnector, ConnectorError, \
-    ConnectorConnectedEvent, ConnectorDisconnectedEvent
+from controlbox.connector.base import Connector, ProtocolConnector, CloseOnErrorConnector, ConnectorError
 from controlbox.connector.serialconn import SerialConnector
 from controlbox.connector.socketconn import SocketConnector
 from controlbox.support.events import EventSource
@@ -39,12 +38,19 @@ class ManagedConnection:
     :param: events          event source to post the resource events when the connection
         opens and closed.
      """
+    # todo add a mixin for connector listener so the conenctor events
+    # are hooked up in a consistent way
     def __init__(self, resource, connector: Connector, retry_period, events):
         self.resource = resource
         self.last_opened = None
         self.connector = connector
+        connector.events.add(self._connector_events)
         self.retry_period = retry_period
         self.events = events
+
+    def _connector_events(self, *args, **kwargs):
+        """propagate connector events to the manager """
+        self.events.fire(*args, **kwargs)
 
     def _open(self, current_time):
         connector = self.connector
@@ -52,15 +58,16 @@ class ManagedConnection:
         if not connector.connected:
             try:
                 connector.connect()
-                self.events.fire(ConnectorConnectedEvent(self.connector))
+                logger.info("device connected: %s" % self.resource)
             except ConnectorError as e:
+                logger.exception(e)
                 logger.warn("Unable to connect to device %s: %s" % (self.resource, e))
 
     def close(self):
         was_connected = self.connector.connected
         self.connector.disconnect()
         if was_connected:
-            self.events.fire(ConnectorDisconnectedEvent(self.connector))
+            logger.info("device disconnected: %s" % self.resource)
 
     def maintain(self, current_time):
         if self._needs_retry(current_time):
@@ -74,6 +81,9 @@ class ControllerConnectionManager:
     """
     Keeps track of the resources available for potential controllers, and attempts to open them
     at regular intervals.
+
+    Fires ConnectorConnectedEvent when a connector is available.
+    Fires ConnectorDisconnectedEvent
     """
 
     def __init__(self, retry_period=30):
@@ -100,13 +110,16 @@ class ControllerConnectionManager:
         self._connections[resource] = self._new_managed_connection(resource, connector, self.retry_period, self.events)
 
     def _new_managed_connection(self, resource, connector, timeout, events):
-        return ManagedConnection(resource, connector, self.retry_period, self.events)
+        return ManagedConnection(resource, connector, timeout, events)
 
     @property
     def connections(self):
+        """
+        retrieves a mapping from the resource key to the ManagedConnection.
+        """
         return dict(self._connections)
 
-    def update(self, current_time=time):
+    def update(self, current_time=time.time):
         """
         updates all managed connections on this manager.
         """
@@ -114,7 +127,7 @@ class ControllerConnectionManager:
             try:
                 managed_connection.maintain(current_time())
             except Exception as e:
-                logger.error("unexpected exception %s on %s, closing." % (e, managed_connection))
+                logger.exception("unexpected exception '%s' on '%s', closing." % (e, managed_connection))
                 managed_connection.close()
 
 
@@ -152,9 +165,9 @@ class ConnectionDiscovery:
             return
         if type(event) is ResourceAvailableEvent:
             connector = self._create_connector(event.resource)
-            self.manager.connected(event.resource, connector)
+            self.manager.connected(event.key, connector)
         elif type(event) is ResourceUnavailableEvent:
-            self.manager.disconnected(event.resource)
+            self.manager.disconnected(event.key)
 
     def update(self):
         """
@@ -230,27 +243,8 @@ class ControllerDiscoveryFacade:
         discovery = TCPServerDiscovery(service_type)
 
         def connector_factory(resource: ZeroconfTCPServerEndpoint):
-            connector = SocketConnector(sock_args=(), connect_args=(resource.ip_address, resource.port))
+            connector = SocketConnector(sock_args=(), connect_args=(resource.hostname, resource.port))
             connector = CloseOnErrorConnector(connector)
             return ProtocolConnector(connector, protocol_sniffer)
 
         return ConnectionDiscovery(discovery, connector_factory)
-
-
-def monitor():
-    builder = ControllerDiscoveryFacade
-    # just use the connector as the protocol
-
-    def sniffer(x):
-        return x
-
-    discoveries = (builder.build_serial_discovery(sniffer),
-                   builder.build_tcp_server_discovery(sniffer, "brewpi"))
-    facade = builder(discoveries)
-    while True:
-        # detect any new
-        facade.update()
-
-
-if __name__ == '__main__':
-    monitor()

@@ -7,27 +7,30 @@ from controlbox.conduit.discovery import ResourceAvailableEvent, ResourceUnavail
 
 class ResourceEventsTest(unittest.TestCase):
     def test_resource_available(self):
-        sut = ResourceAvailableEvent(self, "123")
+        sut = ResourceAvailableEvent(self, "123", "abcd")
         assert_that(sut.source, is_(self))
-        assert_that(sut.resource, is_("123"))
+        assert_that(sut.key, is_("123"))
+        assert_that(sut.resource, is_("abcd"))
 
     def test_resource_unavailable(self):
-        sut = ResourceAvailableEvent(self, "123")
+        sut = ResourceAvailableEvent(self, "123", "abcd")
         assert_that(sut.source, is_(self))
-        assert_that(sut.resource, is_("123"))
+        assert_that(sut.key, is_("123"))
+        assert_that(sut.resource, is_("abcd"))
 
     def test_resource_event_equality_same_instances(self):
         obj = object()
-        r1 = ResourceAvailableEvent(self, obj)
-        r2 = ResourceAvailableEvent(self, obj)
+        obj2 = object()
+        r1 = ResourceAvailableEvent(self, obj, obj2)
+        r2 = ResourceAvailableEvent(self, obj, obj2)
         assert_that(r1, is_(equal_to(r2)))
         assert_that(r2, is_(equal_to(r1)))
 
     def test_resource_event_equality_distinct_instances(self):
         obj1 = "1"+"23"
         obj2 = "123"
-        r1 = ResourceAvailableEvent(self, obj1)
-        r2 = ResourceAvailableEvent(self, obj2)
+        r1 = ResourceAvailableEvent(self, obj1, None)
+        r2 = ResourceAvailableEvent(self, obj2, None)
         assert_that(r1, is_(equal_to(r2)))
         assert_that(r2, is_(equal_to(r1)))
 
@@ -73,7 +76,7 @@ class PolledResourceDiscoveryTest(unittest.TestCase):
         sut = PolledResourceDiscovery()
         sut._device_eq = Mock()
         events = sut._changed_events({1: "1"})
-        assert_that(events, is_([ResourceAvailableEvent(sut, (1, "1"))]))
+        assert_that(events, is_([ResourceAvailableEvent(sut, 1, "1")]))
         sut._device_eq.assert_not_called()
 
     def test_resource_removed(self):
@@ -86,15 +89,15 @@ class PolledResourceDiscoveryTest(unittest.TestCase):
         sut.previous = {1: "1"}
         sut._device_eq = Mock()
         events = sut._changed_events({})
-        assert_that(events, is_([ResourceUnavailableEvent(sut, (1, "1"))]))
+        assert_that(events, is_([ResourceUnavailableEvent(sut, 1, "1")]))
         sut._device_eq.assert_not_called()
 
     def test_resource_changed(self):
         sut = PolledResourceDiscovery()
         sut.previous = {1: "1"}
         events = sut._changed_events({1: "11"})
-        assert_that(events, is_([ResourceUnavailableEvent(sut, (1, "1")),
-                                 ResourceAvailableEvent(sut, (1, "11"))]))
+        assert_that(events, is_([ResourceUnavailableEvent(sut, 1, "1"),
+                                 ResourceAvailableEvent(sut, 1, "11")]))
 
     def test_resource_unchanged(self):
         sut = PolledResourceDiscovery()

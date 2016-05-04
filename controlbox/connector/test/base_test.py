@@ -6,7 +6,7 @@ from hamcrest import assert_that, is_, raises, calling, instance_of
 from controlbox.conduit.base import StreamErrorReportingConduit
 from controlbox.connector.base import ConnectorEvent, ConnectorConnectedEvent, ConnectorDisconnectedEvent, Connector, \
     AbstractConnector, ConnectionNotAvailableError, ConnectorError, ConnectionNotConnectedError, DelegateConnector, \
-    CloseOnErrorConnector, ProtocolConnector
+    CloseOnErrorConnector, ProtocolConnector, AbstractDelegateConnector
 from controlbox.protocol.async import UnknownProtocolError
 from controlbox.support.events import EventSource
 
@@ -77,14 +77,10 @@ class AbstractConnectorTest(unittest.TestCase):
         assert_that(sut.conduit, is_(conduit))
         sut.check_connected.assert_called_once()
 
-    def test_connected_no_conduit(self):
-        sut = AbstractConnector()
-        assert_that(sut._connected(), is_(False))
-
     def connected_conduit_open(self, open):
         sut = AbstractConnector()
         sut._conduit = Mock()
-        sut._conduit.open = Mock(return_value=open)
+        sut._conduit.open = open
         assert_that(sut._connected(), is_(open))
 
     def test_connected_conduit_open(self):
@@ -270,20 +266,21 @@ class DelegateConnectorTest(unittest.TestCase):
         sut.delegate.disconnect.assert_called_once()
 
 
-class CloseOnErrorConnectorTest(unittest.TestCase):
-    def test_constructor(self):
-        delegate = object()
-        sut = CloseOnErrorConnector(delegate)
-        assert_that(sut.conduit, is_(None))
-        assert_that(sut.delegate, is_(delegate))
-
-        assert_that(sut.connected, is_(False))
-        assert_that(sut.conduit, is_(None))
-
+class AbstractDelegateConnectorTest(unittest.TestCase):
     def test_connected(self):
-        sut = CloseOnErrorConnector(None)
+        sut = AbstractDelegateConnector(Mock())
+        sut.delegate.connected = True
         sut._conduit = object()
         assert_that(sut.connected, is_(True))
+
+
+class CloseOnErrorConnectorTest(unittest.TestCase):
+    def test_constructor(self):
+        delegate = Mock()
+        sut = CloseOnErrorConnector(delegate)
+        assert_that(sut._conduit, is_(None))
+        assert_that(sut.delegate, is_(delegate))
+        assert_that(sut.connected, is_(False))
 
     def test_connect_already_connected(self):
         delegate = Mock()
@@ -304,9 +301,11 @@ class CloseOnErrorConnectorTest(unittest.TestCase):
     def test_disconnect(self):
         delegate = Mock()
         sut = CloseOnErrorConnector(delegate)
-        sut._conduit = object()
+        conduit = Mock()
+        sut._conduit = conduit
         sut.disconnect()
         assert_that(sut._conduit, is_(None))
+        conduit.close.assert_called_once()
         delegate.disconnect.assert_called_once()
 
     def test_on_stream_exception(self):
@@ -345,6 +344,7 @@ class ProtocolConnectorTest(unittest.TestCase):
         delegate = Mock()
         sut = ProtocolConnector(delegate, None)
         sut._protocol = object()
+        sut._conduit = object()
         delegate.connect = Mock()
         sut.connect()
         delegate.connect.assert_not_called()
@@ -392,10 +392,10 @@ class ProtocolConnectorTest(unittest.TestCase):
         delegate.disconnect.assert_called_once()
 
     def test_disconnect_protocol(self):
-        self.disconnect(False)
+        self.disconnect(with_shutdown=False)
 
     def test_disconnect_protocol_with_shutdown(self):
-        self.disconnect(True)
+        self.disconnect(with_shutdown=True)
 
     def disconnect(self, with_shutdown):
         """ sets up a protocol for disconnection, with optional shutdown method """
@@ -409,11 +409,13 @@ class ProtocolConnectorTest(unittest.TestCase):
             del protocol.shutdown
 
         sut._protocol = protocol
+        conduit = sut._conduit = Mock()
         delegate.disconnect = Mock()
         # when
         sut.disconnect()
         # then
         assert_that(sut.protocol, is_(None))
         delegate.disconnect.assert_called_once()
+        conduit.assert_called_once()
         if with_shutdown:
             protocol.shutdown.assert_called_once()

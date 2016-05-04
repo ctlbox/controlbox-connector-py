@@ -50,7 +50,7 @@ class MethodWrappingProxy(object):
     def __getattribute__(self, name):
         target = object.__getattribute__(self, "_target")
         attr = target.__getattribute__(name)
-        if isinstance(attr, types.MethodType):
+        if isinstance(attr, types.MethodType) or isinstance(attr, types.BuiltinMethodType):
             wrapper = object.__getattribute__(self, "_wrapper")
             attr = wrapper(attr)
         return attr

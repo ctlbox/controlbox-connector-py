@@ -26,7 +26,7 @@ class TCPServerDiscoveryTest(unittest.TestCase):
             assert_that(sut.zeroconf, is_(Zeroconf.return_value))
             assert_that(sut.browser, is_(ServiceBrowser.return_value))
             Zeroconf.assert_called_once()
-            ServiceBrowser.assert_called_once_with(Zeroconf.return_value, "_mysvc._tcp._local.", sut)
+            ServiceBrowser.assert_called_once_with(Zeroconf.return_value, "_mysvc._tcp.local.", sut)
 
     def test_resource_for_unknown_service(self):
         sut = TCPServerDiscovery("mysvc", False)
@@ -61,7 +61,7 @@ class TCPServerDiscoveryTest(unittest.TestCase):
         sut.resource_for_service = Mock(return_value=info)
         sut._publish(callable, zeroconf, "type", "name")
         sut.resource_for_service.assert_called_once_with(zeroconf, "type", "name")
-        callable.assert_called_once_with(sut, info)
+        callable.assert_called_once_with(sut, "name", info)
         sut.event_queue.put.assert_called_once_with(event)
 
     def test_publish_no_info(self):

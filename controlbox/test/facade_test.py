@@ -1,10 +1,10 @@
+import logging
 from time import time
 from unittest import TestCase
 from unittest.mock import Mock, MagicMock
-
 from hamcrest import assert_that, equal_to, is_not, is_, empty, instance_of
-from controlbox.connector.base import Connector, ConnectorConnectedEvent, ConnectorError, ConnectorDisconnectedEvent
-from controlbox.facade import ControllerConnectionManager, ManagedConnection
+from controlbox.connector.base import Connector, ConnectorError
+from controlbox.facade import ControllerConnectionManager, ManagedConnection, ControllerDiscoveryFacade, logger
 
 
 class ManagedConnectionTest(TestCase):
@@ -18,6 +18,7 @@ class ManagedConnectionTest(TestCase):
         assert_that(sut.events, is_(events))
         assert_that(sut.last_opened, is_(None))
         assert_that(sut.retry_period, is_(5))
+        connector.events.add.assert_called_with(sut._connector_events)
 
     def test_retry_connect(self):
         sut = ManagedConnection(object(), Connector(), 5, object())
@@ -36,7 +37,6 @@ class ManagedConnectionTest(TestCase):
         sut.maintain(time)
         assert_that(sut.last_opened, is_(50))
         connector.connect.assert_called_once()
-        events.fire.assert_called_with(ConnectorConnectedEvent(connector))
 
     def test_maintain_not_connected_connect_exception(self):
         connector = Mock()
@@ -68,7 +68,6 @@ class ManagedConnectionTest(TestCase):
         sut = ManagedConnection(object(), connector, 5, events)
         sut.close()
         connector.disconnected.assert_called_once()
-        events.fire.assert_called_with(ConnectorDisconnectedEvent(connector))
 
     def test_close_disconnected(self):
         connector = Mock()
@@ -166,3 +165,37 @@ class ControllerConnectionManagerTest(TestCase):
         mc1.maintain.assert_called_once_with(100)
         mc2.maintain.assert_called_once_with(100)
         mc1.maintain.assert_not_called()
+
+
+def monitor():
+    logging.root.setLevel(logging.INFO)
+    logging.root.addHandler(logging.StreamHandler())
+
+    builder = ControllerDiscoveryFacade
+
+    # just use the connector as the protocol
+    def sniffer(x):
+        return x
+
+    def handle_connections(connectors):
+        for c in connectors:
+            try:
+                conduit = c.connector.conduit
+                if conduit and conduit.open:
+                    conduit.input.read()
+                    conduit.output.write(b"[]\n")
+                    conduit.output.flush()
+            except Exception as e:
+                logger.exception(e)
+                pass
+
+    discoveries = (builder.build_serial_discovery(sniffer),
+                   builder.build_tcp_server_discovery(sniffer, "brewpi"))
+    facade = builder(discoveries)
+    while True:
+        # detect any new
+        facade.update()
+        handle_connections(facade.manager.connections.values())
+
+if __name__ == '__main__':
+    monitor()

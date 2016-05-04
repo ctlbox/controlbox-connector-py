@@ -1,5 +1,4 @@
 import logging
-import weakref
 from abc import abstractmethod
 
 from controlbox.conduit.base import Conduit, StreamErrorReportingConduit
@@ -98,7 +97,10 @@ class Connector():
 
 
 class AbstractConnector(Connector):
-    """ Manages the connection cycle to an endpoint."""
+    """ Manages the connection cycle to an endpoint.
+        This class adds some robustness to the standard methods so that subclasses don't need to perform
+        state checks when implementing template methods like _connect, _disconnect.
+    """
 
     def __init__(self):
         super().__init__()
@@ -121,17 +123,19 @@ class AbstractConnector(Connector):
 
         try:
             self._conduit = self._connect()
-            self.events.fire(ConnectorConnectedEvent(self))
         finally:
             if not self._conduit:
                 self.disconnect()
+            else:
+                self.events.fire(ConnectorConnectedEvent(self))
 
     def disconnect(self):
         if self._conduit is None:
             return
-        self._disconnect()
-        self._conduit.close()
+        conduit = self._conduit
         self._conduit = None
+        self._disconnect()
+        conduit.close()
         self.events.fire(ConnectorDisconnectedEvent(self))
 
     @abstractmethod
@@ -159,7 +163,7 @@ class AbstractConnector(Connector):
         raise NotImplementedError
 
     def _connected(self):
-        return self._conduit is not None and self._conduit.open()
+        return self._conduit.open
 
     @property
     def conduit(self) -> Conduit:
@@ -206,6 +210,42 @@ class DelegateConnector(Connector):
         return self.delegate.disconnect()
 
 
+class AbstractDelegateConnector(AbstractConnector):
+    """
+    Delegates methods to the delegate connector, unless they are overridden
+    """
+    def __init__(self, delegate):
+        super().__init__()
+        self.delegate = delegate
+        delegate.events.add(self._delegate_events)
+
+    def _delegate_events(self, event):
+        """ closes this connector when the wrapped connector closes. """
+        if isinstance(event, ConnectorDisconnectedEvent):
+            self.disconnect()
+
+    def _try_available(self):
+        return self.delegate.available
+
+    def _connect(self) -> Conduit:
+        self.delegate.connect()
+        wrapped = self._wrap_conduit(self.delegate.conduit)
+        return wrapped
+
+    def _wrap_conduit(self, conduit) -> Conduit:
+        return conduit
+
+    def _disconnect(self):
+        self.delegate.disconnect()
+
+    def _connected(self) -> bool:
+        return self.delegate.connected
+
+    @property
+    def endpoint(self):
+        return self.delegate.endpoint
+
+
 # class ConnectorContextManager:
 #     """
 #     Opens the connector on entry, and closes it on exit.
@@ -231,37 +271,21 @@ class DelegateConnector(Connector):
 #         self.connector.disconnect()
 
 
-class CloseOnErrorConnector(DelegateConnector):
+class CloseOnErrorConnector(AbstractDelegateConnector):
     """
     Detects any exceptions thrown reading/writing to the stream and closes the connector.
     """
-
     def __init__(self, delegate):
         super().__init__(delegate)
-        self._conduit = None
 
-    @property
-    def connected(self):
-        return self._conduit is not None
-
-    def connect(self):
-        if self._conduit is None:
-            super().connect()
-            self._conduit = StreamErrorReportingConduit(super().conduit, self.on_stream_exception)
-
-    @property
-    def conduit(self):
-        return self._conduit
-
-    def disconnect(self):
-        self._conduit = None
-        super().disconnect()
+    def _wrap_conduit(self, conduit):
+        return StreamErrorReportingConduit(conduit, self.on_stream_exception)
 
     def on_stream_exception(self):
         self.disconnect()
 
 
-class ProtocolConnector(DelegateConnector):
+class ProtocolConnector(AbstractDelegateConnector):
     """
     A connection that must satisfy protocol requirements before being considered open.
     """
@@ -269,37 +293,31 @@ class ProtocolConnector(DelegateConnector):
         super().__init__(delegate)
         self._sniffer = protocol_sniffer
         self._protocol = None
-        delegate.events.add(weakref.ref(self._delegate_events))
 
-    def _delegate_events(self, event):
-        """ closes this connector when the wrapped connector closes. """
-        if isinstance(event, ConnectorDisconnectedEvent):
-            self.disconnect()
+    def _connect(self)->Conduit:
+        result = super()._connect()
+        try:
+            self._protocol = self._sniffer(result)
+            if self._protocol is None:
+                raise UnknownProtocolError("Protocol sniffer did not return a protocol.")
+        except UnknownProtocolError as e:
+            raise ConnectorError() from e
+        finally:  # cleanup connection on protocol error
+            if not self._protocol:
+                self.disconnect()
+        return result
 
-    def connect(self):
-        if self._protocol is None:
-            super().connect()
-            try:
-                self._protocol = self._sniffer(self.conduit)
-                if self._protocol is None:
-                    raise UnknownProtocolError("Protocol sniffer did not return a protocol.")
-            except UnknownProtocolError as e:
-                raise ConnectorError() from e
-            finally:  # cleanup connection on protocol error
-                if not self._protocol:
-                    super().disconnect()
+    def _connected(self):
+        return self._protocol is not None
 
-    @property
-    def connected(self):
-        return self._protocol is not None and super().connected
-
-    def disconnect(self):
+# todo - invoking the chained connector should happen in the base class for consistency
+    def _disconnect(self):
         protocol = self._protocol
         self._protocol = None
         if protocol is not None:
             if hasattr(protocol, 'shutdown'):
                 protocol.shutdown()
-        super().disconnect()
+        self.delegate.disconnect()
 
     @property
     def protocol(self):
