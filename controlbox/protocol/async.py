@@ -156,12 +156,11 @@ class AsyncLoop:
         The background thread is registered as a daemon.
     """
 
-    def __init__(self, fn: Callable, args=()):
+    def __init__(self, fn: Callable=None, args=()):
         """
         :param fn the function to run
         :param args arguments to pass to fn
         """
-        self.exception_handler = lambda x: logger.exception(x)
         self.fn = fn
         self.args = args
         self.stop_event = None   # condition variable that signifies the background thread should stop
@@ -172,29 +171,57 @@ class AsyncLoop:
         Starts the background thread.
         """
         if self.background_thread is None:
-            t = threading.Thread(target=self._loop)
+            t = threading.Thread(target=self._run)
             t.setDaemon(True)
             self.stop_event = threading.Event()
             self.background_thread = t
             t.start()
 
-    def _loop(self):
+    def exception_handler(self, e):
+        logger.exception(e)
+
+    def _run(self):
         """ The processing loop for the background thread.
              Invokes the callable for as long as the stop signal is not received.
         """
-        stop = self.stop_event
-        while not stop.is_set():
+        self._do(self.startup)
+        while self.running():
             try:
-                self.fn(*self.args)
+                self._do(self.loop)
             except Exception as e:
                 self.exception_handler(e)
+        self._do(self.shutdown)
         logger.info("background thread exiting")
 
+    def _do(self, callme):
+        """ runs a function and captures any exceptions """
+        if self.running():
+            try:
+                callme()
+            except Exception as e:
+                self.exception_handler(e)
+
+    def startup(self):
+        """ template method called when the thread starts"""
+        pass
+
+    def loop(self):
+        self.fn(*self.args)
+
+    def shutdown(self):
+        """ template method called when the thread exits """
+        pass
+
+    def running(self):
+        return not self.stop_event.is_set()
+
     def stop(self):
-        if self.stop_event is not None:
-            self.stop_event.set()
-            if self.background_thread and self.background_thread is not threading.current_thread():
-                self.background_thread.join()
+        event = self.stop_event
+        if event is not None:
+            event.set()
+            thread = self.background_thread
+            if thread and thread is not threading.current_thread():
+                thread.join()
             self.background_thread = None
 
 
@@ -278,6 +305,12 @@ may instead provide their own asynchronous handler methods that conform to the e
     def _decode_response(self) -> Response:
         """ reads the next response from the conduit. """
         raise NotImplementedError
+
+    def background_loop(self):
+        """
+        runs the background processing for this protocol.
+        """
+        return self.read_response_async()
 
     def read_response_async(self):
         if not self._conduit.open:

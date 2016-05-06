@@ -67,7 +67,7 @@ class ManagedConnectionTest(TestCase):
         connector.connected = True
         events = Mock()
         sut = ManagedConnection(object(), connector, 5, events)
-        sut.close()
+        sut._close()
         connector.disconnected.assert_called_once()
 
     def test_close_disconnected(self):
@@ -75,7 +75,7 @@ class ManagedConnectionTest(TestCase):
         connector.connected = False
         events = Mock()
         sut = ManagedConnection(object(), connector, 5, events)
-        sut.close()
+        sut._close()
         connector.disconnected.assert_not_called()
         events.fire.assert_not_called()
 
@@ -112,15 +112,16 @@ class ControllerConnectionManagerTest(TestCase):
         sut._new_managed_connection.reset_mock()
         sut.connected("res", connector)
         sut._new_managed_connection.assert_not_called()
+        mc.start.assert_called_once()
 
     def test_new_managed_connection(self):
-        sut = ControllerConnectionManager()
+        sut = ControllerConnectionManager(20)
         res = MagicMock()
         connector = Mock()
         mc = sut._new_managed_connection(res, connector, sut.retry_period, sut.events)
         assert_that(mc.last_opened, is_(None))
         assert_that(mc.resource, is_(res))
-        assert_that(mc.retry_period, is_(30))
+        assert_that(mc.retry_period, is_(20))
         assert_that(mc.connector, is_(connector))
         assert_that(mc.events, is_(sut.events))
         # in order to validate the _new_managed_connection contract we need to validate
@@ -144,6 +145,7 @@ class ControllerConnectionManagerTest(TestCase):
         assert_that(sut.connections, is_(empty()))
         connection.close.assert_called_once()
 
+
     def test_disconnected_not_known(self):
         sut = ControllerConnectionManager()
         listener = Mock()
@@ -153,19 +155,10 @@ class ControllerConnectionManagerTest(TestCase):
 
     def test_update(self):
         sut = ControllerConnectionManager()
-        mc1 = Mock()
-        mc2 = Mock()
-        sut._connections = {1: mc1, 2: mc2}
-        mc1.maintain.side_effect = ConnectorError("blah")
-        time = Mock(return_value=100)
-
+        sut.events.publish = Mock()
         # when
-        sut.update(time)
-        # time updated on each iteration of the loop
-        assert_that(time.call_count, is_(2))
-        mc1.maintain.assert_called_once_with(100)
-        mc2.maintain.assert_called_once_with(100)
-        mc1.maintain.assert_not_called()
+        sut.update()
+        sut.events.publish.assert_called_once()
 
 
 def monitor():

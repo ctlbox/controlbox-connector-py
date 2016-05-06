@@ -14,6 +14,8 @@ from controlbox.conduit.discovery import PolledResourceDiscovery
 logger = logging.getLogger(__name__)
 
 
+
+
 class SerialConduit(Conduit):
     """
     A conduit that provides comms via a serial port.
@@ -21,6 +23,12 @@ class SerialConduit(Conduit):
 
     def __init__(self, ser: serial.Serial):
         self.ser = ser
+        # patch flushing since this causes a lockup if the serial is disconnected during
+        # the flush.
+        ser.flush = self._no_flush
+
+    def _no_flush(self, *args, **kwargs):
+        pass
 
     @property
     def target(self):

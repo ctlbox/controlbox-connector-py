@@ -40,8 +40,8 @@ class SocketConnector(AbstractConnector):
     def _connect(self)->Conduit:
         try:
             sock = socket.socket(*self._sock_args)
+            sock.settimeout(5)
             sock.connect(self._connect_args)
-            sock.setblocking(0)
             logger.info("opened socket to %s" % str(self._connect_args))
             return SocketConduit(sock)
         except socket.error as e:
