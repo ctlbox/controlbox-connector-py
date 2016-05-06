@@ -14,8 +14,6 @@ from controlbox.conduit.discovery import PolledResourceDiscovery
 logger = logging.getLogger(__name__)
 
 
-
-
 class SerialConduit(Conduit):
     """
     A conduit that provides comms via a serial port.

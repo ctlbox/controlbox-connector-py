@@ -145,7 +145,6 @@ class ControllerConnectionManagerTest(TestCase):
         assert_that(sut.connections, is_(empty()))
         connection.close.assert_called_once()
 
-
     def test_disconnected_not_known(self):
         sut = ControllerConnectionManager()
         listener = Mock()

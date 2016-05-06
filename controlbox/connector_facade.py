@@ -125,7 +125,8 @@ class ControllerConnectionManager:
         if previous is not None:
             if previous.connector is connector:
                 return
-        conn = self._connections[resource] = self._new_managed_connection(resource, connector, self.retry_period, self.events)
+        conn = self._connections[resource] = self._new_managed_connection(resource, connector,
+                                                                          self.retry_period, self.events)
         conn.start()
 
     def _new_managed_connection(self, resource, connector, timeout, events):
@@ -152,6 +153,7 @@ class ControllerConnectionManager:
 
     def update(self):
         self.events.publish()
+
 
 class ConnectionDiscovery:
     """

@@ -1,5 +1,6 @@
 from queue import Queue
 
+
 class EventSource(object):
 
     def __init__(self):

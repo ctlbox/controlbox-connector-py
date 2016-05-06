@@ -23,7 +23,7 @@ class SerialConnectorTest(unittest.TestCase):
         serial.isOpen.return_value = False
         conn = SerialConnector(serial)
         serial.isOpen.assert_called_once()
-        assert_that(conn.endpoint, is_(serial))
+        assert_that(conn.endpoint, is_(serial.name))
 
     def test_connected(self):
         serial = Mock()

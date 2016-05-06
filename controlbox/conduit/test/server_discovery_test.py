@@ -90,7 +90,7 @@ class TCPServerDiscoveryTest(unittest.TestCase):
         sut = TCPServerDiscovery("mysvc", False)
         sut._publish = Mock()
         sut.remove_service(zeroconf, "type", "name")
-        sut._publish.assert_called_once_with(ResourceUnavailableEvent, zeroconf, "type", "name")
+        sut._publish.assert_called_once_with(ResourceUnavailableEvent, zeroconf, "type", "name", False)
 
     def test_update(self):
         sut = TCPServerDiscovery("mysvc", False)
