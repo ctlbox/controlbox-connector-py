@@ -60,13 +60,13 @@ class TCPServerDiscovery(PolledResourceDiscovery):
         resource = None if not info else ZeroconfTCPServerEndpoint(info)
         return resource
 
-    def _publish(self, event, zeroconf, svc_type, svc_name):
+    def _publish(self, event, zeroconf, svc_type, svc_name, info_required=true):
         """
         publishes an event corresponding to the given service. The event is published
         only if zeroconf provides info for the service name and type.
         """
         info = self.resource_for_service(zeroconf, svc_type, svc_name)
-        if info:
+        if info or not info_required:
             self.event_queue.put(event(self, svc_name, info))
         else:
             logger.warn("no info for service %s type %s" % (svc_name, svc_type))
@@ -74,7 +74,7 @@ class TCPServerDiscovery(PolledResourceDiscovery):
     def remove_service(self, zeroconf, type, name):
         """ notification from the service browser that a service has been removed """
         logger.info("service unavailable: %s " % name)
-        self._publish(ResourceUnavailableEvent, zeroconf, type, name)
+        self._publish(ResourceUnavailableEvent, zeroconf, type, name, False)
 
     def add_service(self, zeroconf, type, name):
         """ notification from the service browser that a service has been added """
