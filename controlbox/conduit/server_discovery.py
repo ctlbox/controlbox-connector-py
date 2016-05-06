@@ -60,7 +60,7 @@ class TCPServerDiscovery(PolledResourceDiscovery):
         resource = None if not info else ZeroconfTCPServerEndpoint(info)
         return resource
 
-    def _publish(self, event, zeroconf, svc_type, svc_name, info_required=true):
+    def _publish(self, event, zeroconf, svc_type, svc_name, info_required=True):
         """
         publishes an event corresponding to the given service. The event is published
         only if zeroconf provides info for the service name and type.

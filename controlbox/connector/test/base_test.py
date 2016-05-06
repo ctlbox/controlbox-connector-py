@@ -377,6 +377,7 @@ class ProtocolConnectorTest(unittest.TestCase):
             delegate.disconnect.assert_not_called()
             assert_that(sut.connected, is_(True))
             assert_that(sut.protocol, is_(sniffer.return_value))
+            assert_that(sniffer.return_value.connector, is_(sut))
 
         delegate.connect.assert_not_called()
         sniffer.assert_called_with(delegate.conduit)

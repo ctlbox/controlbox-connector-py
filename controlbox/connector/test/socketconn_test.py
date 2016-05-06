@@ -16,7 +16,7 @@ class SocketConnectorTest(unittest.TestCase):
 
     def test_endpoint(self):
         sut = SocketConnector(Mock(), Mock())
-        assert_that(sut.endpoint(), is_(sut._connect_args))
+        assert_that(sut.endpoint, is_(sut._connect_args))
 
     def test_successful_connect(self):
         sock_args = (1, 2)

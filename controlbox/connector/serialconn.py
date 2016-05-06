@@ -26,7 +26,7 @@ class SerialConnector(AbstractConnector):
 
     @property
     def endpoint(self):
-        return self._serial
+        return self._serial.name
 
     def _connected(self):
         return self._serial.isOpen()

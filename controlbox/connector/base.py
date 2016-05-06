@@ -288,6 +288,8 @@ class CloseOnErrorConnector(AbstractDelegateConnector):
 class ProtocolConnector(AbstractDelegateConnector):
     """
     A connection that must satisfy protocol requirements before being considered open.
+    The protocol is available as the `protocol` property. The ProtocolConnector is set
+    on the protocol as the connector attribute.
     """
     def __init__(self, delegate, protocol_sniffer):
         super().__init__(delegate)
@@ -300,6 +302,8 @@ class ProtocolConnector(AbstractDelegateConnector):
             self._protocol = self._sniffer(result)
             if self._protocol is None:
                 raise UnknownProtocolError("Protocol sniffer did not return a protocol.")
+            else:
+                self._protocol.connector = self
         except UnknownProtocolError as e:
             raise ConnectorError() from e
         finally:  # cleanup connection on protocol error

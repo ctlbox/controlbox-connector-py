@@ -34,6 +34,7 @@ class SocketConnector(AbstractConnector):
         self._sock_args = sock_args
         self._connect_args = connect_args
 
+    @property
     def endpoint(self):
         return self._connect_args
 

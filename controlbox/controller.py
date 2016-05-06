@@ -824,6 +824,7 @@ def is_value_object(obj):
 class BaseControlbox(Controlbox):
     """ Provides the operations common to all controllers. The controller and proxy objects provides
        the application view of the external controller.
+    :param:  connector
     """
 
     def __init__(self, connector, object_types):
@@ -838,6 +839,10 @@ class BaseControlbox(Controlbox):
         self._profiles = dict()
         self._current_profile = None
         self.log_events = EventSource()
+
+    @property
+    def p(self) -> ControlboxProtocolV1:  # short-hand and type hint
+        return self._connector.protocol
 
     def handle_async_log_values(self, log_info):
         """ Handles the asynchronous logging values from each object.
@@ -863,19 +868,12 @@ class BaseControlbox(Controlbox):
         for obj, value in object_values:
             obj._update_value(value)
 
-    def initialize(self, fetch_id: callable, load_profile=True):
+    def initialize(self, load_profile=True):
         self._profiles = dict()
         self._current_profile = None
-        id_obj = self.system_id()
-        current_id = id_obj.read()
-        if int(current_id[0]) == 0xFF:
-            current_id = fetch_id()
-            id_obj.write(current_id)
         if load_profile:
             self._set_current_profile(self.active_and_available_profiles()[0])
-        self.p.async_log_handlers += lambda x: self.handle_async_log_values(
-            x.value)
-        return current_id
+        self.p.async_log_handlers += lambda x: self.handle_async_log_values(x.value)
 
     def full_erase(self):
         available = self.active_and_available_profiles()
@@ -889,7 +887,7 @@ class BaseControlbox(Controlbox):
         return obj.decode(data)
 
     def write_value(self, obj: WritableObject, value):
-        fn = self.p.write_system_value if self.is_system_object(
+        fn = self.p.write_syfstem_value if self.is_system_object(
             obj) else self.p.write_value
         return self._write_value(obj, value, fn)
 
@@ -1097,10 +1095,6 @@ class BaseControlbox(Controlbox):
         """ helper method to create an object reference from the class, args and id_chain. """
         container, slot = self._container_slot_from_id_chain(id_chain)
         return ObjectReference(self, container, slot, obj_class, args)
-
-    @property
-    def p(self) -> ControlboxProtocolV1:  # short-hand and type hint
-        return self._connector.protocol
 
     def _check_current_profile(self) -> SystemProfile:
         if not self._current_profile:
