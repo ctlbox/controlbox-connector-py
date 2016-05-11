@@ -26,7 +26,7 @@ class CommonEqualityMixinTest(unittest.TestCase):
         e2 = TestEquals()
         e1.a = "123"
         e1.b = 123
-        e2.a = "12"+"3"
+        e2.a = "12" + "3"
         e2.b = 123
         assert_that(e1, is_(equal_to(e2)))
         assert_that(e1 == e2, is_(True))

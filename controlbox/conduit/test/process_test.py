@@ -55,12 +55,13 @@ class ProcessConduitTest(unittest.TestCase):
             mock.stdout = "out"
             mock.stdin = "in"
             mock.return_value = mock
-            sut = ProcessConduit("myexe", "arg1", "arg2")
+            sut = ProcessConduit("myexe", "arg1", "arg2", cwd="abc")
             assert_that(sut.process, is_(mock._mock_return_value))
             # note that the in/out streams are reversed
             assert_that(sut.input, is_(mock.stdout))
             assert_that(sut.output, is_(mock.stdin))
-            mock.assert_called_once_with("myexe arg1 arg2", stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            mock.assert_called_once_with(("myexe", "arg1", "arg2"), cwd="abc",
+                                         stdout=subprocess.PIPE, stdin=subprocess.PIPE)
             proc = sut.target
             assert_that(proc, is_(mock))
 

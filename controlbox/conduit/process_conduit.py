@@ -1,18 +1,21 @@
+import os
 import subprocess
 
 from controlbox.conduit.base import DefaultConduit
+from controlbox.conduit.discovery import PolledResourceDiscovery
 
 
 class ProcessConduit(DefaultConduit):
     """ Provides a conduit to a locally hosted process. """
 
-    def __init__(self, *args):
+    def __init__(self, *args, cwd=None):
         """
         args: the process image name and any additional arguments required by the process.
         raises OSError and ValueError
         """
         super().__init__()
         self.process = None
+        self.cwd = cwd
         self._load(*args)
 
     @property
@@ -20,8 +23,7 @@ class ProcessConduit(DefaultConduit):
         return self.process
 
     def _load(self, *args):
-        p = subprocess.Popen(
-            " ".join(args), stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+        p = subprocess.Popen(args, cwd=self.cwd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
         self.process = p
         self.set_streams(p.stdout, p.stdin)
 
@@ -43,13 +45,24 @@ class ProcessConduit(DefaultConduit):
             self.process = None
 
 
-# class ProcessDiscovery(ResourceDiscovery):
-#     """ Monitors a folder for executables that can be instantiated. """
+# class DirectoryDiscovery(PolledResourceDiscovery):
+#     """ Monitors a file that can be executed. """
 #
-#     def __init__(self, dir, pattern, connection_factory):
-#         super().__init__(connection_factory)
-#         self.dir = dir
+#     def __init__(self, file, pattern):
+#         super().__init__()
+#         self.file = file
 #         self.pattern = pattern
 #
-#     def is_allowed(self, key, device):
-#         return self.pattern.match(key) and super().is_allowed(key, device)
+#     def _is_allowed(self, key, device):
+#         return self.pattern.match(key)
+
+
+class ProcessDiscovery(PolledResourceDiscovery):
+    """ Monitors a file that can be executed. """
+
+    def __init__(self, file):
+        super().__init__()
+        self.file = file
+
+    def _fetch_available(self):
+        return {} if not os.path.isfile(self.file) else {self.file: self.file}

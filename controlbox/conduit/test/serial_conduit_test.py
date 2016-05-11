@@ -45,14 +45,14 @@ class ConnectorSerialIntegrationTest(unittest.TestCase):
         try:
             factory = serial_connector_factory(invalid_port, baud, timeout=1)
             assert callable(factory)
-        except:
+        except Exception:
             pass
 
     def test_invalid_arguments_fail(self):
         try:
             factory = serial_connector_factory(invalid_port, baud, timeout=1)
             self.assertRaises(serial.SerialException, factory)
-        except:
+        except Exception:
             pass
 
     @unittest.skipUnless(port, "arduino port not defined")

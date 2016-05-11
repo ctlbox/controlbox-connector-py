@@ -61,7 +61,7 @@ class ObjectReference(BaseControlboxObject):
         return self.container.id_chain_for(self.slot)
 
     def __str__(self):
-        return "%s(%r)" % (self.__class__, self.__dict__)
+        return "%s(%r)" % (self.__class__, self.__dict__)  # noqa: H501
 
     def __repr__(self):
         return self.__str__()

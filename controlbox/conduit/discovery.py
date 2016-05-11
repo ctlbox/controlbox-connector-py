@@ -138,7 +138,8 @@ class PolledResourceDiscovery(ResourceDiscovery):
 
     def _fetch_available(self):
         """ Template method for subclasses to determine the current
-            resources available.
+            resources available.:
+        :return: a dictionary of resource handle to resource instance.
         """
         return {}
 

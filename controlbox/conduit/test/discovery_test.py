@@ -27,7 +27,7 @@ class ResourceEventsTest(unittest.TestCase):
         assert_that(r2, is_(equal_to(r1)))
 
     def test_resource_event_equality_distinct_instances(self):
-        obj1 = "1"+"23"
+        obj1 = "1" + "23"
         obj2 = "123"
         r1 = ResourceAvailableEvent(self, obj1, None)
         r2 = ResourceAvailableEvent(self, obj2, None)

@@ -2,7 +2,7 @@ import threading
 
 
 def quote(val):
-    return "'"+val+"'" if val is not None else "None"
+    return "'" + val + "'" if val is not None else "None"
 
 
 class StringerMixin:
@@ -16,7 +16,8 @@ class StringerMixin:
         return super().__str__() + ':' + self._sorted_items_string()
 
     def _sorted_items_string(self):
-        return "{"+", ".join([("'"+str(key))+"'"+": "+(quote(val)) for key, val in sorted(self.__dict__.items())])+"}"
+        return "{" + ", ".join([("'" + str(key)) + "'" + ": " + (quote(val))
+                                for key, val in sorted(self.__dict__.items())]) + "}"
 
 
 class CommonEqualityMixin(object):

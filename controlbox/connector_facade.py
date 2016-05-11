@@ -13,9 +13,11 @@ import time
 from serial import Serial
 
 from controlbox.conduit.discovery import ResourceAvailableEvent, ResourceUnavailableEvent, PolledResourceDiscovery
+from controlbox.conduit.process_conduit import ProcessDiscovery
 from controlbox.conduit.serial_conduit import SerialDiscovery
 from controlbox.conduit.server_discovery import TCPServerDiscovery, ZeroconfTCPServerEndpoint
 from controlbox.connector.base import Connector, ProtocolConnector, CloseOnErrorConnector, ConnectorError
+from controlbox.connector.processconn import ProcessConnector
 from controlbox.connector.serialconn import SerialConnector
 from controlbox.connector.socketconn import SocketConnector
 from controlbox.protocol.async import AsyncLoop
@@ -268,6 +270,23 @@ class ControllerDiscoveryFacade:
 
         def connector_factory(resource: ZeroconfTCPServerEndpoint):
             connector = SocketConnector(sock_args=(), connect_args=(resource.hostname, resource.port))
+            connector = CloseOnErrorConnector(connector)
+            return ProtocolConnector(connector, protocol_sniffer)
+
+        return ConnectionDiscovery(discovery, connector_factory)
+
+    @staticmethod
+    def build_process_discovery(protocol_sniffer, file, args, cwd=None):
+        """
+        Creates a ControllerDiscovery instance suited to discovering local executable controllers.
+        :param protocol_sniffer A callable that takes a Conduit and is responsible for decoding the
+            protocol, or raise a UnknownProtocolError. See AbstractConnector
+        :param file The filename of the process file to open.
+        """
+        discovery = ProcessDiscovery(file)
+
+        def connector_factory(resource):
+            connector = ProcessConnector(resource, args, cwd=cwd)
             connector = CloseOnErrorConnector(connector)
             return ProtocolConnector(connector, protocol_sniffer)
 

@@ -27,7 +27,7 @@ class ManagedConnectionTest(TestCase):
         start = time()
         sut.last_opened = start
         assert_that(sut._needs_retry(start), is_(False))
-        assert_that(sut._needs_retry(start+5), is_(True))
+        assert_that(sut._needs_retry(start + 5), is_(True))
 
     def test_maintain_not_connected(self):
         connector = Mock()

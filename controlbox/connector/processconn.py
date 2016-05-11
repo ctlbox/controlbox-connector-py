@@ -20,17 +20,16 @@ def is_executable(file):
 class ProcessConnector(AbstractConnector):
     """ Instantiates a process and connects to it via standard in/out. """
 
-    def __init__(self, sniffer, image, args=None):
-        super().__init__(sniffer)
+    def __init__(self, image, args=None, cwd=None):
+        super().__init__()
         self.image = image
         self.args = args
+        self.cwd = cwd
         self.build_conduit = lambda x: x
 
+    @property
     def endpoint(self):
         return self.image
-
-    def _connected(self):
-        return self._conduit.open
 
     def _disconnect(self):
         pass
@@ -38,7 +37,7 @@ class ProcessConnector(AbstractConnector):
     def _connect(self) -> Conduit:
         try:
             args = self.args if self.args is not None else []
-            p = ProcessConduit(self.image, *args)
+            p = ProcessConduit(self.image, *args, cwd=self.cwd)
             return p
         except (OSError, ValueError) as e:
             logger.error(e)
