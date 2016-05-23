@@ -123,7 +123,13 @@ class ContainerTraits:
 
 
 class Controlbox:
-    pass
+    def __init__(self, connector):
+        self._connector = connector
+
+    @property
+    def protocol(self) -> ControlboxProtocolV1:  # short-hand and type hint
+        return self._connector.protocol
+
 
 
 class TypedObject:
@@ -832,17 +838,13 @@ class BaseControlbox(Controlbox):
         :param connector:       The connector that provides the v0.3.x protocol over a conduit.
         :param object_types:    The factory describing the object types available in the controller.
         """
+        super().__init__(connector)
         self._sysroot = SystemRootContainer(self)
         # todo - populate system root with system objects
-        self._connector = connector
         self._object_types = object_types
         self._profiles = dict()
         self._current_profile = None
         self.log_events = EventSource()
-
-    @property
-    def p(self) -> ControlboxProtocolV1:  # short-hand and type hint
-        return self._connector.protocol
 
     def handle_async_log_values(self, log_info):
         """ Handles the asynchronous logging values from each object.
@@ -873,7 +875,7 @@ class BaseControlbox(Controlbox):
         self._current_profile = None
         if load_profile:
             self._set_current_profile(self.active_and_available_profiles()[0])
-        self.p.async_log_handlers += lambda x: self.handle_async_log_values(x.value)
+        self.protocol.async_log_handlers += lambda x: self.handle_async_log_values(x.value)
 
     def full_erase(self):
         available = self.active_and_available_profiles()
@@ -881,19 +883,19 @@ class BaseControlbox(Controlbox):
             self.delete_profile(p)
 
     def read_value(self, obj: ReadableObject):
-        fn = self.p.read_system_value if self.is_system_object(
-            obj) else self.p.read_value
+        fn = self.protocol.read_system_value if self.is_system_object(
+            obj) else self.protocol.read_value
         data = self._fetch_data_block(fn, obj.id_chain, obj.encoded_len())
         return obj.decode(data)
 
     def write_value(self, obj: WritableObject, value):
-        fn = self.p.write_syfstem_value if self.is_system_object(
-            obj) else self.p.write_value
+        fn = self.protocol.write_syfstem_value if self.is_system_object(
+            obj) else self.protocol.write_value
         return self._write_value(obj, value, fn)
 
     def write_masked_value(self, obj: WritableObject, value):
-        fn = self.p.write_system_masked_value if self.is_system_object(
-            obj) else self.p.write_masked_value
+        fn = self.protocol.write_system_masked_value if self.is_system_object(
+            obj) else self.protocol.write_masked_value
         return self._write_masked_value(obj, value, fn)
 
     def delete_object(self, obj: ContainedObject):
@@ -908,7 +910,7 @@ class BaseControlbox(Controlbox):
         return self.profile_for(profile_id)
 
     def delete_profile(self, p: SystemProfile):
-        self._handle_error(self.p.delete_profile, p.profile_id)
+        self._handle_error(self.protocol.delete_profile, p.profile_id)
         if self._current_profile == p:
             self._set_current_profile(None)
         # profile may have already been deleted
@@ -916,7 +918,7 @@ class BaseControlbox(Controlbox):
 
     def activate_profile(self, p: SystemProfile or None):
         """ activates the given profile. if p is None, the current profile is deactivated. """
-        self._handle_error(self.p.activate_profile, SystemProfile.id_for(p))
+        self._handle_error(self.protocol.activate_profile, SystemProfile.id_for(p))
         self._set_current_profile(p)
 
     def active_and_available_profiles(self):
@@ -924,7 +926,7 @@ class BaseControlbox(Controlbox):
             returns a tuple - the first element is the active profile, or None if no profile is active.
             the second element is a sequence of profiles.
         """
-        future = self.p.list_profiles()
+        future = self.protocol.list_profiles()
         data = BaseControlbox.result_from(future)
         activate = self.profile_for(data[0], True)
         available = tuple([self.profile_for(x) for x in data[1:]])
@@ -935,7 +937,7 @@ class BaseControlbox(Controlbox):
         return False if not active else active.profile_id == p.profile_id
 
     def list_objects(self, p: SystemProfile):
-        future = self.p.list_profile(p.profile_id)
+        future = self.protocol.list_profile(p.profile_id)
         data = BaseControlbox.result_from(future)
         for d in data:
             yield self._materialize_object_descriptor(*d)
@@ -945,7 +947,7 @@ class BaseControlbox(Controlbox):
         # if erase_eeprom:  # return the id back to the pool if the device is being wiped
         #     current_id = self.system_id().read()
         #     id_service.return_id(current_id)
-        self._handle_error(self.p.reset, 1 if erase_eeprom else 0 or 2 if hard_reset else 0)
+        self._handle_error(self.protocol.reset, 1 if erase_eeprom else 0 or 2 if hard_reset else 0)
         if erase_eeprom:
             self._profiles.clear()
             self._current_profile = None
@@ -984,7 +986,7 @@ class BaseControlbox(Controlbox):
         :param optional:    When false, deletion must succeed (the object is deleted). When false, deletion may silently
             fail for a non-existent object.
         """
-        self._handle_error(self.p.delete_object, id_chain, allow_fail=optional)
+        self._handle_error(self.protocol.delete_object, id_chain, allow_fail=optional)
         self.uninstantiate(id_chain, optional)
 
     def create_object(self, obj_class, args=None, container=None, slot=None) -> InstantiableObject:
