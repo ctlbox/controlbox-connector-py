@@ -131,7 +131,6 @@ class Controlbox:
         return self._connector.protocol
 
 
-
 class TypedObject:
     """ A typed object has a type ID that is used to identify the object type to the controller. """
     def __init__(self):
@@ -889,7 +888,7 @@ class BaseControlbox(Controlbox):
         return obj.decode(data)
 
     def write_value(self, obj: WritableObject, value):
-        fn = self.protocol.write_syfstem_value if self.is_system_object(
+        fn = self.protocol.write_system_value if self.is_system_object(
             obj) else self.protocol.write_value
         return self._write_value(obj, value, fn)
 
@@ -957,7 +956,9 @@ class BaseControlbox(Controlbox):
 
     def _write_value(self, obj: WritableObject, value, fn):
         encoded = obj.encode(value)
-        data = self._fetch_data_block(fn, obj.id_chain, encoded)
+        # todo - retrieve object type
+        # also use a code as used in the bridge code to separate encoding/decoding from the objects themselves.
+        data = self._fetch_data_block(fn, obj.id_chain, 0, encoded)
         if data != encoded:
             raise FailedOperationError("could not write value")
         new_value = obj.decode(data)
@@ -1037,6 +1038,11 @@ class BaseControlbox(Controlbox):
 
     @staticmethod
     def _fetch_data_block(fn, *args):
+        """
+        fetches the future using the given function and then retrieves
+        the associated data block, which provides the response for the
+        associated command.
+        """
         future = fn(*args)
         data = BaseControlbox.result_from(future)
         if not data:
