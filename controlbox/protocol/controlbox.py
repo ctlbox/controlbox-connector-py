@@ -38,20 +38,6 @@ def signed_byte(b):
     return b if b < 128 else b - 256
 
 
-def controlbox_protocol_sniffer(line, conduit):
-    result = None
-    line = line.strip()
-#    if line.startswith("[") and line.endswith("]"):
-# todo - allow application handling of the first annotation so that it is responsible for creating
-# the protocol instance.
-#         info = VersionParser("{" + line[1:-1] + "}")
-#         if info.major == 0 and info.minor == 3:
-#             if info.revision == 0:
-#         result = ControllerProtocolV030(
-#             *build_chunked_hexencoded_conduit(conduit))
-    return result
-
-
 def encode_id(idchain) -> bytearray:
     """
     Encodes a sequence of integers to the on-wire binary values (before hex encoding.)
