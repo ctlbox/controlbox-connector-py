@@ -10,6 +10,7 @@ from concurrent.futures import Future
 from io import IOBase
 
 from controlbox.conduit.base import Conduit
+from controlbox.support.events import EventSource
 
 logger = logging.getLogger(__name__)
 
@@ -227,16 +228,21 @@ class AsyncLoop:
 
 class BaseAsyncProtocolHandler:
     """
-Wraps a conduit in an asynchronous request/response handler. The format for the requests and responses is not defined
-at this level, but the class takes care of registering requests sent along with a future response and associating
-incoming responses with the originating request.
+    Wraps a conduit in an asynchronous request/response handler. The format for the requests and responses is not
+    defined at this level, but the class takes care of registering requests sent along with a future response and
+    associating incoming responses with the originating request.
 
-The primary method to use is async_request(r:Request) which asynchronously sends the request and fetches the
-response. The returned FutureResponse can be used by the caller to check if the response has arrived or wait
-for the response.
+    The primary method to use is async_request(r:Request) which asynchronously sends the request and fetches the
+    response. The returned FutureResponse can be used by the caller to check if the response has arrived or wait
+    for the response.
 
-To handle unsolicited responses (with no originating request), use add_unmatched_response_handler(). Subclasses
-may instead provide their own asynchronous handler methods that conform to the expected protocol.
+    To handle unsolicited responses (with no originating request), use add_unmatched_response_handler(). Subclasses
+    may instead provide their own asynchronous handler methods that conform to the expected protocol.
+
+    To receive all requests/responses transmitted over the channel,
+     add a listener to request_handler/response_handler. Request
+     handlers receive the future corresponding to the request. Response
+     handlers receive the response, and any associated futures.
     """
 
     def __init__(self, conduit: Conduit, matcher=None):
@@ -244,13 +250,15 @@ may instead provide their own asynchronous handler methods that conform to the e
         self._requests = defaultdict(list)
         self._unmatched = []
         self.async_thread = None
+        self.request_handlers = EventSource()
+        self.response_handlers = EventSource()
         if matcher:
             self._matching_futures = types.MethodType(
                 matcher, self, BaseAsyncProtocolHandler)
 
     def start_background_thread(self):
         if self.async_thread is None:
-            self.async_thread = AsyncLoop(self.read_response_async)
+            self.async_thread = AsyncLoop(self.background_loop)
             self.async_thread.start()
 
     def stop_background_thread(self):
@@ -275,6 +283,7 @@ may instead provide their own asynchronous handler methods that conform to the e
         :return: A FutureResponse where the corresponding response to the request can be retrieved when it arrives.
         """
         future = FutureResponse(request)
+        self.request_handlers.fire(future)
         self._register_future(future)
         self._stream_request(request)
         return future
@@ -287,13 +296,17 @@ may instead provide their own asynchronous handler methods that conform to the e
         self._stream_request_sent(request)
 
     def _register_future(self, future: FutureResponse):
+        """
+        registers a FutureResponse so that it can be later retrieved when the corresponding response arrives.
+        """
         request = future.request
         if request.response_keys:
             for key in request.response_keys:
                 l = self._requests[key]
                 l.append(future)
                 # todo - handle cancelled/timedout etc.. or otherwise unclaimed FutureResponse objects in
-                # would really like weak referencing here.
+                # would really like weak referencing here so if the caller doesn't care about the future,
+                # then neither do we.
 
     def _unregister_future(self, future: FutureResponse):
         request = future.request
@@ -303,12 +316,14 @@ may instead provide their own asynchronous handler methods that conform to the e
 
     @abstractmethod
     def _decode_response(self) -> Response:
-        """ reads the next response from the conduit. """
+        """  Template method for subclasses. reads/decodes the next response from the conduit. """
         raise NotImplementedError
 
     def background_loop(self):
         """
-        runs the background processing for this protocol.
+        the primary function that pumps messages from the conduit.
+        Reads responses via read_response() so long as the conduit is open.
+        When the conduit is closed, the background thread is terminated.
         """
         return self.read_response_async()
 
@@ -325,6 +340,12 @@ may instead provide their own asynchronous handler methods that conform to the e
         return self.process_response(response)
 
     def process_response(self, response: Response) -> Response:
+        """
+        Handles the response by associating with any previous request or notifying unmatched response
+        listeners.
+
+        Also notifies any general response handlers.
+        """
         if response is not None:
             futures = self._matching_futures(response)
             if futures:
@@ -333,6 +354,7 @@ may instead provide their own asynchronous handler methods that conform to the e
             else:
                 for callback in self._unmatched:
                     callback(response)
+            self.response_handlers.fire(response, futures)
         return response
 
     def _set_future_response(self, future: FutureResponse, response):
