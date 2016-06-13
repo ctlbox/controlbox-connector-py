@@ -1,6 +1,9 @@
 """
-Provides a higher level interface to a controlbox instance.
+Provides an object model interface to a controlbox instance.
+The objects represent application state, and mirror the corresponding
+objects running in the controller.
 
+It is stateful.  For a stateless equivalent, see events.py and ControlboxEvents.
 """
 from abc import abstractmethod
 
@@ -25,18 +28,23 @@ class BaseControlboxObject(CommonEqualityMixin, EventSource):
     """ A Controlbox object maintains a reference to the controller, and provides deep quality
         comparison and a source of events."""
 
-    def __init__(self, controller):
+    def __init__(self, controller: "TypedControlbox"):
         super().__init__()
         super(EventSource, self).__init__()
         self._controller = controller
 
     @property
-    def controller(self):
+    def controller(self)->"TypedControlbox":
         return self._controller
 
     @controller.setter
     def controller(self, controller):
         self._controller = controller
+
+    @property
+    def type(self):
+        cls = self.__class__
+        return self.controller.types.as_id(cls)
 
 
 class ObjectReference(BaseControlboxObject):
@@ -76,7 +84,7 @@ class ObjectEvent():
         self.data = data
 
 
-class ObjectLifetimeEvent():
+class ObjectLifetimeEvent(ObjectEvent):
     """ Describes events that relate to the lifetime of an object. """
 
 
@@ -123,6 +131,9 @@ class ContainerTraits:
 
 
 class Controlbox:
+    """
+    The base interface for maintaining a connection to a controlbox instance.
+    """
     def __init__(self, connector):
         self._connector = connector
 
@@ -172,7 +183,7 @@ class ContainedObject(ControlboxObject):
         the object is in. The full id_chain is the container's id plus the object's slot in the container.
     """
 
-    def __init__(self, controller: Controlbox, container: ContainerTraits, slot: int):
+    def __init__(self, controller: "TypedControlbox", container: ContainerTraits, slot: int):
         # todo - push the profile up to the root container and store controller
         # in that.
         """
@@ -271,7 +282,7 @@ class RootContainerTraits(ContainerTraits):
 class SystemProfile(BaseControlboxObject):
     """ represents a system profile - storage for a root container and contained objects. """
 
-    def __init__(self, controller, profile_id):
+    def __init__(self, controller: Controlbox, profile_id):
         super().__init__(controller)
         self.profile_id = profile_id
         self._objects = dict()  # map of object id to object. These objects are proxy objects to
@@ -788,7 +799,6 @@ class ControllerLoop(MaskedWritableObject, ReadWriteUserObject, ReadWriteValue):
 
 
 class ControllerLoopContainer(RootContainer):
-
     def __init__(self, profile):
         super().__init__(profile)
         self.config_container = DynamicContainer(self.controller, self, 0)
@@ -826,13 +836,45 @@ def is_value_object(obj):
     return obj is not None and hasattr(obj, 'decode') and hasattr(obj, '_update_value')
 
 
-class BaseControlbox(Controlbox):
-    """ Provides the operations common to all controllers. The controller and proxy objects provides
+class ObjectTypeMapper:
+    """
+    Provides a mapping between class types in the API and type IDs sent to controlbox.
+    """
+    def __init__(self, all_types: tuple, mappings: dict=None):
+        """
+        :param: all_types   A list of known classes that define a type_id for the corresponding
+            application type ID
+        :param: mappings    A dictionary mapping from type_id to class.
+        """
+        self._from_id = dict((self.as_id(x), x) for x in self.all_types())
+        if mappings:
+            self._from_id.update(mappings)
+        self._to_id = {cls: id for id, cls in self._from_id.items()}
+
+    def all_types(self):
+        raise NotImplementedError()
+
+    def instance_id(self, obj: InstantiableObject):
+        return obj.type_id
+
+    def from_id(self, type_id) -> InstantiableObject:
+        """
+        Determines the object class type from the id.
+        """
+        return self._from_id.get(type_id, None)
+
+    def as_id(self, clazz):
+        return self._to_id.get(clazz, None)
+
+
+class TypedControlbox(Controlbox):
+    """ Provides a stateful object API to controlbox. The controller and proxy objects provides
        the application view of the external controller.
-    :param:  connector
+    :param: connector  The connector that provides the transport stream to the remote controller
+    :param: object_types  A mapper between object classes and type ids
     """
 
-    def __init__(self, connector, object_types):
+    def __init__(self, connector, object_types: ObjectTypeMapper):
         """
         :param connector:       The connector that provides the v0.3.x protocol over a conduit.
         :param object_types:    The factory describing the object types available in the controller.
@@ -844,6 +886,10 @@ class BaseControlbox(Controlbox):
         self._profiles = dict()
         self._current_profile = None
         self.log_events = EventSource()
+
+    @property
+    def types(self)->ObjectTypeMapper:
+        return self._object_types
 
     def handle_async_log_values(self, log_info):
         """ Handles the asynchronous logging values from each object.
@@ -884,7 +930,7 @@ class BaseControlbox(Controlbox):
     def read_value(self, obj: ReadableObject):
         fn = self.protocol.read_system_value if self.is_system_object(
             obj) else self.protocol.read_value
-        data = self._fetch_data_block(fn, obj.id_chain, obj.encoded_len())
+        data = self._fetch_data_block(fn, obj.id_chain, obj.type, obj.encoded_len())
         return obj.decode(data)
 
     def write_value(self, obj: WritableObject, value):
@@ -926,9 +972,9 @@ class BaseControlbox(Controlbox):
             the second element is a sequence of profiles.
         """
         future = self.protocol.list_profiles()
-        data = BaseControlbox.result_from(future)
+        data = TypedControlbox.result_from(future)
         activate = self.profile_for(data[0], True)
-        available = tuple([self.profile_for(x) for x in data[1:]])
+        available = tuple([self.profile_for(x) for x in data[1]])
         return activate, available
 
     def is_active_profile(self, p: SystemProfile):
@@ -937,8 +983,8 @@ class BaseControlbox(Controlbox):
 
     def list_objects(self, p: SystemProfile):
         future = self.protocol.list_profile(p.profile_id)
-        data = BaseControlbox.result_from(future)
-        for d in data:
+        data = TypedControlbox.result_from(future)
+        for d in data[0]:
             yield self._materialize_object_descriptor(*d)
 
     def reset(self, erase_eeprom=False, hard_reset=True):
@@ -1031,7 +1077,7 @@ class BaseControlbox(Controlbox):
     @staticmethod
     def _handle_error(fn, *args, allow_fail=False):
         future = fn(*args)
-        error = BaseControlbox.result_from(future)
+        error = TypedControlbox.result_from(future)
         if error < 0 and not allow_fail:
             raise FailedOperationError("errorcode %d" % error)
         return error
@@ -1044,7 +1090,7 @@ class BaseControlbox(Controlbox):
         associated command.
         """
         future = fn(*args)
-        data = BaseControlbox.result_from(future)
+        data = TypedControlbox.result_from(future)
         if not data:
             raise FailedOperationError("no data")
         return data
@@ -1078,7 +1124,7 @@ class BaseControlbox(Controlbox):
     @staticmethod
     def container_chain_and_id(id_chain):
         """
-        >>> BaseControlbox.container_chain_and_id(b'\x50\x51\x52')
+        >>> TypedControlbox.container_chain_and_id(b'\x50\x51\x52')
         (b'\x50\x51', 82)
         """
         return id_chain[:-1], id_chain[-1]

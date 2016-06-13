@@ -28,6 +28,7 @@ class ElapsedTime(ReadWriteSystemObject):
         return buf_value, buf_mask
 
     def _decode(self, buf):
+        # todo - use the ScaledTimeCodec so we separate state from encoding/decoding
         time = LongDecoder()._decode(buf[0:4])
         scale = ShortDecoder()._decode(buf[4:6])
         return time, scale
@@ -39,3 +40,6 @@ class ElapsedTime(ReadWriteSystemObject):
         if scale is not None:
             buf[4:6] = ShortEncoder().encode(scale)
         return buf
+
+
+# todo - move all the stateful API into this file

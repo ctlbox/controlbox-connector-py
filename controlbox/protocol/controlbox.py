@@ -63,6 +63,10 @@ def encode_id(idchain) -> bytearray:
     return result
 
 
+def encode_type_id(type):
+    return type,
+
+
 def decode_id(buf) -> list():
     """
     :param buf: The id_chain as the on-wire format.
@@ -391,7 +395,10 @@ class ResponseDecoder(metaclass=ABCMeta):
         return self._read_chain(buf)
 
     def _read_type_chain(self, buf):
-        return self._read_chain(buf)
+        # a type is a large integer value encoded as one or more bytes
+        # for now we assume values < 255 (1 byte length)
+        # future schemes mwill use valus >= 128 as an escape code for larger values.
+        return self._read_chain(buf)[0]
 
     def _read_block(self, size, stream):
         buf = bytearray(size)
@@ -841,12 +848,12 @@ class ControlboxProtocolV1(BaseAsyncProtocolHandler):
     def list_profiles(self) -> FutureResponse:
         return self._send_command(Commands.list_profiles)
 
-    def read_system_value(self, id_chain, object_type, expected_len):
-        return self._send_command(Commands.read_system_value, encode_id(id_chain), encode_id(object_type),
+    def read_system_value(self, id_chain, object_type=0, expected_len=0):
+        return self._send_command(Commands.read_system_value, encode_id(id_chain), encode_type_id(object_type),
                                   expected_len)
 
     def write_system_value(self, id_chain, object_type, buf) -> FutureResponse:
-        return self._send_command(Commands.write_system_value, encode_id(id_chain), encode_id(object_type),
+        return self._send_command(Commands.write_system_value, encode_id(id_chain), encode_type_id(object_type),
                                   len(buf), buf)
 
     def write_system_masked_value(self, id_chain, object_type, buf, mask) -> FutureResponse:
@@ -855,7 +862,8 @@ class ControlboxProtocolV1(BaseAsyncProtocolHandler):
     def _cmd_write_masked_value(self, cmd, id_chain, object_type, buf, mask):
         if len(buf) != len(mask):
             raise ValueError("mask and data buffer must be same length")
-        return self._send_command(cmd, encode_id(id_chain), encode_id(object_type), len(buf), interleave(buf, mask))
+        return self._send_command(cmd, encode_id(id_chain), encode_type_id(object_type), len(buf),
+                                  interleave(buf, mask))
 
     @staticmethod
     def build_bytearray(*args):
