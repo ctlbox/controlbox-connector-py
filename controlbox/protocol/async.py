@@ -329,7 +329,8 @@ class BaseAsyncProtocolHandler:
 
     def read_response_async(self):
         if not self._conduit.open:
-            self.async_thread.stop()
+            if self.async_thread is not None:
+                self.async_thread.stop()
             return None
         else:
             return self.read_response()
