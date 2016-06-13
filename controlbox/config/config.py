@@ -1,9 +1,8 @@
 import os
-import sys
 import platform
-from validate import Validator
 
 from configobj import ConfigObj, Section, ConfigObjError, flatten_errors
+from validate import Validator
 
 # The default extension for configuration files
 config_extension = '.cfg'
@@ -14,15 +13,11 @@ def config_flavor(name, flavor=None):
     return configname
 
 
-def config_filename(name, package=None):
+def config_filename(name, directory=None):
     """
     Determines the location of a config file relative to this module.
     """
-    filename = sys.modules[__name__].__file__
-    dirname = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(filename)), '../..'))
-    if package:
-        dirname = os.path.join(dirname, package.replace('.', '/'))
-    config_file = os.path.join(dirname, name + config_extension)
+    config_file = os.path.join(directory, name + config_extension)
     return config_file
 
 
@@ -36,7 +31,7 @@ def load_config_file_base(file, must_exist=True):
     return ConfigObj(file, interpolation='Template') if must_exist or os.path.exists(file) else ConfigObj()
 
 
-def config_flavor_file(name, package=None, subpart=None)->ConfigObj:
+def config_flavor_file(name, directory, subpart=None)->ConfigObj:
     """
     Loads a specialization of a config file. The configuration file is expected to be named
     after the base, followed by a period and then the specialization, if the specialization is given,
@@ -46,12 +41,29 @@ def config_flavor_file(name, package=None, subpart=None)->ConfigObj:
     :return: The ConfigObj for the configuration file.
     """
     configname = config_flavor(name, subpart)
-    file = config_filename(configname, package)
+    file = config_filename(configname, directory)
     config = load_config_file_base(file)
     return config
 
 
-def load_config(name, package=None):
+def map_os_name(name):
+    """
+    >>> map_os_name('Windows')
+    'windows'
+    >>> map_os_name("Darwin")
+    'osx'
+    """
+    name = name.lower()
+    if name == 'darwin':
+        name = 'osx'
+    return name
+
+
+def os_name():
+    return map_os_name(platform.system())
+
+
+def load_config(name, directory):
     """
         Loads all the configuration files that relate to the given name.
         Configurations are loaded in this order:
@@ -61,12 +73,12 @@ def load_config(name, package=None):
         - the user override
         The configurations are flattened into a single configuration, and then validated
         against a configuration specialization "schema".
-    :param name: the base name of the configuration to load.
+    :directory: the location of the configuration file
     :return:
     """
-    local_config = config_flavor_file(name, package)
-    default_config = config_flavor_file(name, package, 'default')
-    platform_config = config_flavor_file(name, package, platform.system().lower())
+    local_config = config_flavor_file(name, directory)
+    default_config = config_flavor_file(name, directory, 'default')
+    platform_config = config_flavor_file(name, directory, os_name())
     # todo - how to set the name for this
     user_config = load_config_file_base(os.path.expanduser(
         '~/' + name + config_extension), must_exist=False)
@@ -76,7 +88,7 @@ def load_config(name, package=None):
     config.merge(user_config)
     config.merge(local_config)
 
-    config.configspec = config_flavor_file(name, package, 'schema')
+    config.configspec = config_flavor_file(name, directory, 'schema')
     validator = Validator()
     result = config.validate(validator)
     if not result:
@@ -92,16 +104,16 @@ def load_config(name, package=None):
     return config
 
 
-def apply(target, config_path, config_name, package=None):
+def apply(target, config_path, config_name, directory):
     """
     Applies defined values from a path to a given target object.
     :param target: The object to receive the values defined
     :param cont_path: The path that is the prefix to the values defined. The path is split on '.'.
     :param config_name: The configuration file to load.
-    :param package: the package that contains the configuration file
+    :param the directory containing the config file
     :return:
     """
-    conf = load_config(config_name, package)
+    conf = load_config(config_name, directory)
     name_parts = config_path.split('.')
     apply_conf_path(conf, name_parts, target)
 
@@ -163,26 +175,53 @@ def reconstruct_name(path, package_depth):
     return '.'.join(parts[-package_depth - 1:])
 
 
-def build_module_name(module, package_depth):
+def find_package_root(dir, package=None):
+    def prepend_package_part(pkg, part):
+        return part if not pkg else part + '.' + pkg
+
+    package_file = os.path.join(dir, '__init__.py')
+    parent = os.path.abspath(os.path.join(dir, '..'))
+    return find_package_root(parent, prepend_package_part(package, os.path.basename(dir))) \
+        if os.path.exists(package_file) else (dir, package)
+
+
+def determine_module_package(module):
+    file = module.__file__
+    # walk the tree until there are no __init__.py files
+    root, package = find_package_root(os.path.dirname(file))
+    return package
+
+
+def build_module_name(module):
     """
     Retrieves the fully qualified name of the module.
     :param module:
     :param package_depth:
     :return:
     """
-    return module.__name__ if module.__name__ is not '__main__' else reconstruct_name(module.__file__, package_depth)
+    if module.__package__ is None:
+        module.__package__ = determine_module_package(module)
+    return module.__name__ if module.__name__ != '__main__' else \
+        reconstruct_name(module.__file__, len(module.__package__.split('.')))
 
 
-def configure_module(module, package_depth=None, config_name=None):
+def configure_module(module, config_name=None):
     """
-    The package is needed when a module is loaded as main. Then the name isn't the fully qualified name, but
+    Applies the configuration to the given module.
+    The configuration is loaded from files named after the module.
+
+    Obsolete - possibly a python 2 holdover - the package is needed when a module is loaded as main.
+    Then the name isn't the fully qualified name, but
     just '__main__'. To reconstruct the original module name, we use the package, and combine with the filename
     """
-    package = module.__package__
-    name = build_module_name(module, package_depth)
+    fqname = build_module_name(module)
     if not config_name:
-        config_name = name.split('.')[-1]
-    apply(module, name, config_name, package)
+        config_name = fqname.split('.')[-1]
+    # apply the settings to this module, the nested location of settings
+    # reflects the module's location (x.y.z.source_file)
+    # the config_name follows the module source file name, located in the
+    # same directory as the source file
+    apply(module, fqname, config_name, os.path.dirname(module.__file__))
 
 
 def configure_package(module):

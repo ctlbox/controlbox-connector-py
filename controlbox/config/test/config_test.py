@@ -8,11 +8,12 @@ from nose.plugins.attrib import attr
 from controlbox.config.config import configure_module, config_filename, config_flavor
 
 config_name = 'config_test'
-config_package = 'controlbox.config.test'
 value1 = None
 value2 = None
 value3 = None
 value4 = None
+
+this_module = sys.modules[__name__]
 
 
 @attr(fixture='config')
@@ -20,12 +21,11 @@ class ConfigTestCase(unittest.TestCase):
 
     def test_can_retrieve_config_file(self):
         name = config_flavor(config_name, "default")
-        file = config_filename(name, config_package)
+        file = config_filename(name, os.path.dirname(this_module.__file__))
         assert_that(os.path.exists(file), is_(True),
                     "expected config path %s to exist" % file)
 
     def test_can_apply_module(self):
-        this_module = sys.modules[__name__]
         configure_module(this_module)
         assert_that(value1, is_(equal_to('def')))
         assert_that(value2, is_(equal_to(['1', '2', '3'])))
