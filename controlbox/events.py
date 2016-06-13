@@ -1,5 +1,5 @@
 """
-One layer above the decoded protocol.
+One layer above the parsed protocol.
 Listens to events from the connector protocol and fires events to registered listeners
 """
 from abc import abstractmethod
@@ -11,6 +11,7 @@ from controlbox.protocol.controlbox import CommandResponse, Commands, ReadValueR
     LogValuesResponseDecoder, ListProfilesResponseDecoder, ReadSystemValueResponseDecoder, \
     WriteSystemValueResponseDecoder, WriteMaskedValueResponseDecoder
 from controlbox.support.events import EventSource
+from controlbox.support.mixins import StringerMixin
 
 
 class ConnectorCodec:
@@ -110,7 +111,10 @@ class ConnectorListener:
         """
 
 
-class ConnectorEvent:
+class ConnectorEvent(StringerMixin):
+    """
+    The base event class for all connector events.
+    """
     def __init__(self, connector):
         self.connector = connector
 
@@ -380,7 +384,7 @@ class ConnectorEventFactory:
 class ReadValueEventFactory(ConnectorEventFactory):
     decoder = ReadValueResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         id_chain, type, data_length = request
         buffer, = response
         value = connector.decode_state(type, buffer)
@@ -390,7 +394,7 @@ class ReadValueEventFactory(ConnectorEventFactory):
 class WriteValueEventFactory(ConnectorEventFactory):
     decoder = WriteValueResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         id_chain, type, data = request
         buffer, = response
         requested_value = connector.decode_state(type, buffer)
@@ -401,7 +405,7 @@ class WriteValueEventFactory(ConnectorEventFactory):
 class CreateObjectEventFactory(ConnectorEventFactory):
     decoder = CreateObjectResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         id_chain, type, data = request
         buffer, = response
         value = connector.decode_state(type, buffer)
@@ -411,7 +415,7 @@ class CreateObjectEventFactory(ConnectorEventFactory):
 class DeleteObjectEventFactory(ConnectorEventFactory):
     decoder = DeleteObjectResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         id_chain, type = request
         code, = response
         return ObjectDeletedEvent(connector, id_chain, type)
@@ -420,7 +424,7 @@ class DeleteObjectEventFactory(ConnectorEventFactory):
 class ListProfileEventFactory(ConnectorEventFactory):
     decoder = ListProfileResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         profile_id, = request
         definitions, = response
         object_defs = [connector.decode_definition(x) for x in definitions]
@@ -430,7 +434,7 @@ class ListProfileEventFactory(ConnectorEventFactory):
 class CreateProfileEventFactory(ConnectorEventFactory):
     decoder = CreateProfileResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         profile_id, = response
         event = ProfileCreatedEvent(connector, profile_id)
         # todo factor valid/invalid id logic for profiles to a central method
@@ -442,7 +446,7 @@ class CreateProfileEventFactory(ConnectorEventFactory):
 class DeleteProfileEventFactory(ConnectorEventFactory):
     decoder = DeleteProfileResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         profile_id, = request
         status, = response
         event = ProfileDeletedEvent(connector, profile_id)
@@ -454,7 +458,7 @@ class DeleteProfileEventFactory(ConnectorEventFactory):
 class ActivateProfileEventFactory(ConnectorEventFactory):
     decoder = ActivateProfileResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         profile_id, = request
         status, = response
         event = ProfileActivatedEvent(connector, profile_id)
@@ -466,21 +470,21 @@ class ActivateProfileEventFactory(ConnectorEventFactory):
 class ResetEventFactory(ConnectorEventFactory):
     decoder = ResetResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         flags, = request
         status, = response
         return ControllerResetEvent(connector, flags, status)
 
 
 class NoOpEventFactory(ConnectorEventFactory):
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         pass
 
 
 class LogValuesEventFactory(ConnectorEventFactory):
     decoder = LogValuesResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         flags, id_chain = request
         # todo - complete parsing response
         return ContainerObjectsLeggedEvent(connector, flags, id_chain)
@@ -489,7 +493,7 @@ class LogValuesEventFactory(ConnectorEventFactory):
 class ListProfilesEventFactory(ConnectorEventFactory):
     decoder = ListProfilesResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         active_profile, profile_ids = response
         return ProfilesListedEvent(connector, active_profile, profile_ids)
 
@@ -497,7 +501,7 @@ class ListProfilesEventFactory(ConnectorEventFactory):
 class ReadSystemValueEventFactory(ConnectorEventFactory):
     decoder = ReadSystemValueResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         id_chain, type, data_length = request
         buffer, = response
         value = connector.decode_state(type, buffer)
@@ -507,7 +511,7 @@ class ReadSystemValueEventFactory(ConnectorEventFactory):
 class WriteSystemValueEventFactory(ConnectorEventFactory):
     decoder = WriteSystemValueResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         id_chain, type, to_write = request
         buffer, = response
         requested_value = connector.decode_state(type, buffer)
@@ -518,7 +522,7 @@ class WriteSystemValueEventFactory(ConnectorEventFactory):
 class WriteMaskedValueEventFactory(ConnectorEventFactory):
     decoder = WriteMaskedValueResponseDecoder
 
-    def __call__(self, connector: 'ConnectorEvents', response, request, command_id):
+    def __call__(self, connector: 'ControlboxEvents', response, request, command_id):
         id_chain, type, _ = request
         buffer, = response
         set_value = connector.decode_state(type, buffer)
@@ -534,30 +538,30 @@ class AsyncLogValuesEventFactory(LogValuesEventFactory):
     pass
 
 
-class ConnectorEvents:
+class ControlboxEvents:
     """
     Higher level, stateless interface to the controlbox protocol.
     Works in terms of python objects rather than protocol buffers.
     """
     eventFactories = {
-        Commands.read_value: ReadValueEventFactory,
-        Commands.write_value: WriteValueEventFactory,
-        Commands.create_object: CreateObjectEventFactory,
-        Commands.delete_object: DeleteObjectEventFactory,
-        Commands.list_profile: ListProfileEventFactory,
-        Commands.next_free_slot: NoOpEventFactory,  # NextFreeSlotEventFactory,
-        Commands.create_profile: CreateProfileEventFactory,
-        Commands.delete_profile: DeleteProfileEventFactory,
-        Commands.activate_profile: ActivateProfileEventFactory,
-        Commands.reset: ResetEventFactory,
-        Commands.log_values: LogValuesEventFactory,
-        Commands.next_free_slot_root: NoOpEventFactory,
-        Commands.list_profiles: ListProfilesEventFactory,
-        Commands.read_system_value: ReadSystemValueEventFactory,
-        Commands.write_system_value: WriteSystemValueEventFactory,
-        Commands.write_masked_value: WriteMaskedValueEventFactory,
-        Commands.write_system_masked_value: WriteSystemMaskedValueEventFactory,
-        Commands.async_log_values: AsyncLogValuesEventFactory
+        Commands.read_value: ReadValueEventFactory(),
+        Commands.write_value: WriteValueEventFactory(),
+        Commands.create_object: CreateObjectEventFactory(),
+        Commands.delete_object: DeleteObjectEventFactory(),
+        Commands.list_profile: ListProfileEventFactory(),
+        Commands.next_free_slot: NoOpEventFactory(),  # NextFreeSlotEventFactory,
+        Commands.create_profile: CreateProfileEventFactory(),
+        Commands.delete_profile: DeleteProfileEventFactory(),
+        Commands.activate_profile: ActivateProfileEventFactory(),
+        Commands.reset: ResetEventFactory(),
+        Commands.log_values: LogValuesEventFactory(),
+        Commands.next_free_slot_root: NoOpEventFactory(),
+        Commands.list_profiles: ListProfilesEventFactory(),
+        Commands.read_system_value: ReadSystemValueEventFactory(),
+        Commands.write_system_value: WriteSystemValueEventFactory(),
+        Commands.write_masked_value: WriteMaskedValueEventFactory(),
+        Commands.write_system_masked_value: WriteSystemMaskedValueEventFactory(),
+        Commands.async_log_values: AsyncLogValuesEventFactory()
     }
 
     def __init__(self, controlbox: Controlbox, constructor_codec: ConnectorCodec, state_codec: ConnectorCodec):
@@ -619,22 +623,37 @@ class ConnectorEvents:
 
     def create(self, id_chain, object_type, state):
         """ creates a new instance on the controller with the given initial state"""
-        data = self.encode_config(type, state)
-        self.controlbox.protocol.create_object(id_chain, object_type, data)
+        data, mask = self.encode_config(type, state)
+        if mask is not None:
+            raise ValueError("object definition is not complete: %s", state)
+        return self.controlbox.protocol.create_object(id_chain, object_type, data)
 
-    def delete(self, idchain):
+    def delete(self, id_chain, object_type):
         """
         Deletes the object at the given location in the current profile.
         """
+        return self.controlbox.protocol.delete_object(id_chain, object_type)
 
-    def read(self, idchain):
-        """ read the state of the object. the result is avaailble via the returned
+    def read(self, id_chain, type=0):
+        """ read the state of the object. the result is available via the returned
             future and also via the listener. """
+        # todo - how to wrap the result from the future to apply the decoding?
+        # will need a future wrapper with a mapping function to wrap the result.
+        return self.controlbox.protocol.read_value(id_chain, type)
 
-    def write(self, idchain, state):
+    def read_system(self, id_chain, type=0):
+        """ read the state of the object. the result is available via the returned
+            future and also via the listener. """
+        # todo - how to wrap the result from the future to apply the decoding?
+        # will need a future wrapper with a mapping function to wrap the result.
+        return self.controlbox.protocol.read_system_value(id_chain, type)
+
+    def write(self, id_chain, state, type=0):
         """
         updates the state of a given object.
         """
+        buf = self.state_codec.encode(state)
+        return self.controlbox.protocol.write_value(id_chain, type, buf)
 
     def profile(self, profile_id):
         """
@@ -645,3 +664,6 @@ class ConnectorEvents:
         """
         retrieves an iterator of all objects in the current profile.
         """
+
+    def __str__(self):
+        return super().__str__()
