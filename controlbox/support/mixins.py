@@ -2,7 +2,7 @@ import threading
 
 
 def quote(val):
-    return "'" + val + "'" if val is not None else "None"
+    return "'" + str(val) + "'" if val is not None else "None"
 
 
 class StringerMixin:
