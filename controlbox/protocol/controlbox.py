@@ -910,12 +910,9 @@ class ControlboxProtocolV1(BaseAsyncProtocolHandler):
                 if cmd_id:  # peek command id
                     decoder = self._create_response_decoder(cmd_id)
                     command_block, parsed_command = decoder.parse_request(cmd_id, stream)
-                    try:
-                        parsed_response = decoder.parse_response(stream)
-                        if parsed_response is None:
-                            raise ValueError("request decoder did not return a value")
-                    except Exception as e:
-                        parsed_response = e
+                    parsed_response = decoder.parse_response(stream)
+                    if parsed_response is None:
+                        raise ValueError("request decoder did not return a value")
                     return CommandResponse(command_block, parsed_response, parsed_command)
             finally:
                 while not stream.closed and stream.read():  # spool off rest of block if caller didn't read it
