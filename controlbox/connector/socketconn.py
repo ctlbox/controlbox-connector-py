@@ -19,12 +19,21 @@ class TCPServerEndpoint:
         self.ip_address = ip_address
         self.port = port
 
+    def key(self):
+        """
+        >>> TCPServerEndpoint(None, 'ipaddr', 55).key()
+        'ipaddr:55'
+        >>> TCPServerEndpoint('name', 'ipaddr', 55).key()
+        'name:55'
+        """
+        return str(self.hostname or self.ip_address) + ':' + str(self.port)
+
 
 class SocketConnector(AbstractConnector):
     """
     A connector that communicates data via a socket
     """
-    def __init__(self, sock_args, connect_args):
+    def __init__(self, sock_args, connect_args, report_errors=True):
         """
         Creates a new serial connector.
         :param sock The socket that defines the socket protocol to connect to.
@@ -33,6 +42,7 @@ class SocketConnector(AbstractConnector):
         super().__init__()
         self._sock_args = sock_args
         self._connect_args = connect_args
+        self._report_errors = report_errors
 
     @property
     def endpoint(self):
@@ -46,7 +56,8 @@ class SocketConnector(AbstractConnector):
             logger.info("opened socket to %s" % str(self._connect_args))
             return SocketConduit(sock)
         except socket.error as e:
-            logger.warn("error opening socket to %s: %s" % (self._connect_args, e))
+            method = logger.warn if self._report_errors else logger.debug
+            method("error opening socket to %s: %s" % (self._connect_args, e))
             raise ConnectorError from e
 
     def _disconnect(self):

@@ -59,7 +59,7 @@ class TCPServerDiscoveryTest(unittest.TestCase):
         sut.event_queue = Mock()
         sut.event_queue.put = Mock()
         sut.resource_for_service = Mock(return_value=info)
-        sut._publish(callable, zeroconf, "type", "name")
+        sut._publish_service(callable, zeroconf, "type", "name")
         sut.resource_for_service.assert_called_once_with(zeroconf, "type", "name")
         callable.assert_called_once_with(sut, "name", info)
         sut.event_queue.put.assert_called_once_with(event)
@@ -73,7 +73,7 @@ class TCPServerDiscoveryTest(unittest.TestCase):
         sut.event_queue = Mock()
         sut.event_queue.put = Mock()
         sut.resource_for_service = Mock(return_value=None)
-        sut._publish(callable, zeroconf, "type", "name")
+        sut._publish_service(callable, zeroconf, "type", "name")
         sut.resource_for_service.assert_called_once_with(zeroconf, "type", "name")
         callable.assert_not_called()
         sut.event_queue.put.assert_not_called()
@@ -81,16 +81,16 @@ class TCPServerDiscoveryTest(unittest.TestCase):
     def test_add_service(self):
         zeroconf = Mock()
         sut = TCPServerDiscovery("mysvc", False)
-        sut._publish = Mock()
+        sut._publish_service = Mock()
         sut.add_service(zeroconf, "type", "name")
-        sut._publish.assert_called_once_with(ResourceAvailableEvent, zeroconf, "type", "name")
+        sut._publish_service.assert_called_once_with(ResourceAvailableEvent, zeroconf, "type", "name")
 
     def test_remove_service(self):
         zeroconf = Mock()
         sut = TCPServerDiscovery("mysvc", False)
-        sut._publish = Mock()
+        sut._publish_service = Mock()
         sut.remove_service(zeroconf, "type", "name")
-        sut._publish.assert_called_once_with(ResourceUnavailableEvent, zeroconf, "type", "name", False)
+        sut._publish_service.assert_called_once_with(ResourceUnavailableEvent, zeroconf, "type", "name", False)
 
     def test_update(self):
         sut = TCPServerDiscovery("mysvc", False)

@@ -18,11 +18,9 @@ class ResourceEvent(CommonEqualityMixin):
     def __init__(self, source, key, resource):
         """
         :param source   The ResourceDiscovery that posted this event
-        :param resource An identifier for the resource that is available.
-        The type/semantics of this object are determined by the source.
-        This typically takes the form of a tuple (logical, physical)
-        where the logical name and an object that can be used to access the resource
-        are provided.
+        :param key An identifier for the resource that is available.
+        :param resource The resource itself, which may have instance-specific details beyond what is available in
+            key.
         """
         self.source = source
         self.key = key

@@ -19,7 +19,7 @@ from controlbox.conduit.server_discovery import TCPServerDiscovery, ZeroconfTCPS
 from controlbox.connector.base import Connector, ProtocolConnector, CloseOnErrorConnector, ConnectorError
 from controlbox.connector.processconn import ProcessConnector
 from controlbox.connector.serialconn import SerialConnector
-from controlbox.connector.socketconn import SocketConnector
+from controlbox.connector.socketconn import SocketConnector, TCPServerEndpoint
 from controlbox.protocol.async import AsyncLoop
 from controlbox.support.events import QueuedEventSource
 
@@ -258,7 +258,7 @@ class ControllerDiscoveryFacade:
         return ConnectionDiscovery(discovery, connector_factory)
 
     @staticmethod
-    def build_tcp_server_discovery(protocol_sniffer, service_type):
+    def build_tcp_server_discovery(protocol_sniffer, service_type, known_addresses):
         """
         Creates a ControllerDiscovery instance suited to discovering local server controllers.
         :param protocol_sniffer A callable that takes a Conduit and is responsible for decoding the
@@ -266,10 +266,11 @@ class ControllerDiscoveryFacade:
         :param service_type A string that identifies the specific type of TCP service. This is an application
             defined name.
         """
-        discovery = TCPServerDiscovery(service_type)
+        discovery = TCPServerDiscovery(service_type, known_addresses=known_addresses)
 
-        def connector_factory(resource: ZeroconfTCPServerEndpoint):
-            connector = SocketConnector(sock_args=(), connect_args=(resource.hostname, resource.port))
+        def connector_factory(resource: TCPServerEndpoint):
+            connector = SocketConnector(sock_args=(), connect_args=(resource.hostname, resource.port),
+                                        report_errors=False)
             connector = CloseOnErrorConnector(connector)
             return ProtocolConnector(connector, protocol_sniffer)
 

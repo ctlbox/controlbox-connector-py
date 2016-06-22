@@ -4,6 +4,7 @@ from unittest import TestCase
 from unittest.mock import Mock, MagicMock
 from hamcrest import assert_that, equal_to, is_not, is_, empty, instance_of
 from controlbox.connector.base import Connector, ConnectorError
+from controlbox.connector.socketconn import TCPServerEndpoint
 from controlbox.connector_facade import ControllerConnectionManager, ManagedConnection, ControllerDiscoveryFacade, \
     logger
 
@@ -184,7 +185,8 @@ def monitor():
                 pass
 
     discoveries = (builder.build_serial_discovery(sniffer),
-                   builder.build_tcp_server_discovery(sniffer, "brewpi"))
+                   builder.build_tcp_server_discovery(sniffer, "brewpi",
+                                      (TCPServerEndpoint('localhost', '127.0.0.1', 8332))))
     facade = builder(discoveries)
     while True:
         # detect any new

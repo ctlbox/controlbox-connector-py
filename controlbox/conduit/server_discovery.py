@@ -26,7 +26,7 @@ class TCPServerDiscovery(PolledResourceDiscovery):
     them to a queue. These events are then posted next time update() is called.
     The resources discovered are ZeroconfTCPServerEndpoint.
     """
-    def __init__(self, service_subtype, use_zeroconf=True):
+    def __init__(self, service_subtype, use_zeroconf=True, known_addresses=tuple()):
         """
          :param service_subtype  The subtype of the TCP services to detect. This is an application-specific name.
             The type is qualified automatically with TCP and local supertypes.
@@ -42,6 +42,15 @@ class TCPServerDiscovery(PolledResourceDiscovery):
         else:
             self.zeroconf = None
             self.browser = None
+
+        self._publish_addresses(known_addresses)
+
+    def _publish_addresses(self, addresses):
+        for a in addresses:
+            self._publish_address(a)
+
+    def _publish_address(self,address:TCPServerEndpoint):
+        self._publish(ResourceAvailableEvent(self, address.key(), address))
 
     @staticmethod
     def qualify_service_type(service_subtype):
@@ -60,26 +69,29 @@ class TCPServerDiscovery(PolledResourceDiscovery):
         resource = None if not info else ZeroconfTCPServerEndpoint(info)
         return resource
 
-    def _publish(self, event, zeroconf, svc_type, svc_name, info_required=True):
+    def _publish_service(self, event, zeroconf, svc_type, svc_name, info_required=True):
         """
         publishes an event corresponding to the given service. The event is published
         only if zeroconf provides info for the service name and type.
         """
         info = self.resource_for_service(zeroconf, svc_type, svc_name)
         if info or not info_required:
-            self.event_queue.put(event(self, svc_name, info))
+            self._publish(event(self, svc_name, info))
         else:
             logger.warn("no info for service %s type %s" % (svc_name, svc_type))
+
+    def _publish(self, event):
+        self.event_queue.put(event)
 
     def remove_service(self, zeroconf, type, name):
         """ notification from the service browser that a service has been removed """
         logger.info("service unavailable: %s " % name)
-        self._publish(ResourceUnavailableEvent, zeroconf, type, name, False)
+        self._publish_service(ResourceUnavailableEvent, zeroconf, type, name, False)
 
     def add_service(self, zeroconf, type, name):
         """ notification from the service browser that a service has been added """
         logger.info("service available: %s " % name)
-        self._publish(ResourceAvailableEvent, zeroconf, type, name)
+        self._publish_service(ResourceAvailableEvent, zeroconf, type, name)
 
     def update(self):
         queue = self.event_queue
