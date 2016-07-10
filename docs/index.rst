@@ -12,9 +12,6 @@ Contents:
    :maxdepth: 2
 
    modules
-   controlbox
-   events
-
 
 Indices and tables
 ==================

@@ -10,10 +10,10 @@ Key technologies here:
 
 ## Development flow
 
-in the root of the project, run
+in the `docs` folder, run
 
 ```
-sphinx-autobuild docs docs/_build/html -H
+sphinx-autobuild . _build/html -B
 ```
 
 This will build the project, and watch the files for changes, automatically reloading the page in the web browser.
