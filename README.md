@@ -1,6 +1,18 @@
 # controlbox-py
 API to the objects running in a controlbox microcontainer on an embedded device, implemented in Python.
 
+
+## Installing
+
+OSX needs
+
+```
+export ARCHFLAGS="-arch x86_64"
+export CC=gcc
+```
+
+defined before installing sphinx-autodoc. 
+
 ## Architecture
 
 The connector provides proxy objects that correspond to
