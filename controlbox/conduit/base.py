@@ -1,8 +1,10 @@
+import logging
 from abc import abstractmethod
 from io import IOBase
 
 from controlbox.support.proxy import make_exception_notify_proxy
 
+logger = logging.getLogger(__name__)
 
 class Conduit:
     """
@@ -100,11 +102,16 @@ class ConduitStreamDecorator(ConduitDecorator):
         input = self._input
         self._output = None
         self._input = None
-        if output is not None:
-            output.close()
-        if input is not None:
-            input.close()
+        self._force_close(output)
+        self._force_close(input)
         super().close()
+
+    def _force_close(self, stream):
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError as e:
+                logger.debug('exception closing stream %s: %s' % (stream, e))
 
     @abstractmethod
     def _wrap_input(self, input):
