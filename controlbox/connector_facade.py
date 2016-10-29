@@ -77,7 +77,14 @@ class ManagedConnection(AsyncLoop):
     def loop(self):
         self._open()
         while self.connector.connected:
-            self.connector.protocol.read_response_async()
+            success = False
+            try:
+                self.connector.protocol.read_response_async()
+                success = True
+            finally:
+                if not success:
+                    self._close()
+
         self.stop_event.wait(self.retry_period)
 
     def maintain(self, current_time):
