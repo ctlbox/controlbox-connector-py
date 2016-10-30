@@ -159,39 +159,3 @@ class ControllerConnectionManagerTest(TestCase):
         # when
         sut.update()
         sut.events.publish.assert_called_once()
-
-
-def monitor():
-    """ logs the connected devices. A dummy protocol sniffer is used. """
-    logging.root.setLevel(logging.INFO)
-    logging.root.addHandler(logging.StreamHandler())
-
-    builder = ControllerDiscoveryFacade
-
-    # just use the connector as the protocol
-    def sniffer(x):
-        return x
-
-    def handle_connections(connectors):
-        for c in connectors:
-            try:
-                conduit = c.connector.conduit
-                if conduit and conduit.open:
-                    conduit.input.read()
-                    conduit.output.write(b"[]\n")
-                    conduit.output.flush()
-            except Exception as e:
-                logger.exception(e)
-                pass
-
-    discoveries = (builder.build_serial_discovery(sniffer),
-                   builder.build_tcp_server_discovery(sniffer, "brewpi",
-                                      (TCPServerEndpoint('localhost', '127.0.0.1', 8332))))
-    facade = builder(discoveries)
-    while True:
-        # detect any new
-        facade.update()
-        handle_connections(facade.manager.connections.values())
-
-if __name__ == '__main__':
-    monitor()
