@@ -52,7 +52,7 @@ class ConduitDecoratorTest(unittest.TestCase):
         assert_that(sut.input, is_(io))
         prop.assert_called_once()
 
-    def test_outut(self):
+    def test_output(self):
         mock = Mock()
         io = IOBase()
         prop = PropertyMock(return_value=io)
@@ -107,16 +107,23 @@ class ConduitStreamDecoratorTest(unittest.TestCase):
         sut.close()
         mock.close.assert_called_once()
 
-    def test_stream_close(self):
+    def test_stream_close_swallows_exceptions(self):
         mock = Mock()
         mock.close = Mock()
         output = Mock()
-        output.close = Mock()
+        output.close = Mock(side_effect=OSError)
+        # properties are set on the type, not the instance
         type(mock).output = PropertyMock(return_value=output)
+        input = Mock()
+        input.close = Mock(side_effect=OSError)
+        type(mock).input = PropertyMock(return_value=input)
+
         sut = ConduitStreamDecorator(mock)
         assert_that(sut.output, is_(output))
+        assert_that(sut.input, is_(input))
         sut.close()
         output.close.assert_called_once()
+        input.close.assert_called_once()
         mock.close.assert_called_once()
 
     def test_wrap_output(self):
