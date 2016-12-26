@@ -840,11 +840,10 @@ class ObjectTypeMapper:
     """
     Provides a mapping between class types in the API and type IDs sent to controlbox.
     """
-    def __init__(self, all_types: tuple, mappings: dict=None):
+    def __init__(self, mappings: dict=None):
         """
-        :param: all_types   A list of known classes that define a type_id for the corresponding
-            application type ID
-        :param: mappings    A dictionary mapping from type_id to class.
+        :param: mappings    A dictionary mapping from type_id to class. These are additional
+            mappings that can be added in addition to the types returned from all_types()
         """
         self._from_id = dict((self.as_id(x), x) for x in self.all_types())
         if mappings:
@@ -854,12 +853,15 @@ class ObjectTypeMapper:
     def all_types(self):
         raise NotImplementedError()
 
-    def instance_id(self, obj: InstantiableObject):
+    def instance_id(self, obj: TypedObject):
+        """
+        Retrieves the typeid of a controlbox object.
+        """
         return obj.type_id
 
-    def from_id(self, type_id) -> InstantiableObject:
+    def from_id(self, type_id) -> TypedObject:
         """
-        Determines the object class type from the id.
+        Determines the class from the type id.
         """
         return self._from_id.get(type_id, None)
 
