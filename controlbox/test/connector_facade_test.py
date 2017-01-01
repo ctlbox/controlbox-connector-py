@@ -1,12 +1,11 @@
-import logging
 from time import time
 from unittest import TestCase
 from unittest.mock import Mock, MagicMock
+
 from hamcrest import assert_that, equal_to, is_not, is_, empty, instance_of
+
 from controlbox.connector.base import Connector, ConnectorError
-from controlbox.connector.socketconn import TCPServerEndpoint
-from controlbox.connector_facade import ControllerConnectionManager, ManagedConnection, ControllerDiscoveryFacade, \
-    logger
+from controlbox.connector_facade import ControllerConnectionManager, ManagedConnection
 
 
 class ManagedConnectionTest(TestCase):

@@ -1,9 +1,12 @@
 """
 One layer above the parsed protocol.
 Listens to events from the connector protocol and fires events to registered listeners
+
+Codecs are used to convert from the on-wire format to a python representation of the data.
 """
 from abc import abstractmethod
 
+from controlbox.codecs import ConnectorCodec
 from controlbox.controller import Controlbox
 from controlbox.protocol.controlbox import CommandResponse, Commands, ReadValueResponseDecoder, \
     WriteValueResponseDecoder, CreateObjectResponseDecoder, DeleteObjectResponseDecoder, ListProfileResponseDecoder, \
@@ -13,26 +16,6 @@ from controlbox.protocol.controlbox import CommandResponse, Commands, ReadValueR
 from controlbox.support.events import EventSource
 from controlbox.support.mixins import StringerMixin
 
-
-class ConnectorCodec:
-    """
-    Knows how to convert object state to/from the on-wire data format.
-    """
-
-    @abstractmethod
-    def decode(self, type, data, mask=None):
-        """
-        decodes an object state representation.
-        realm: either constructor or state
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    def encode(self, type, value):
-        """ returns (type, data, mask)
-            Encodes a given value as a data buffer and a mask.
-         """
-        raise NotImplementedError()
 
 
 class ConnectorListener:
@@ -124,12 +107,18 @@ class ConnectorEvent(StringerMixin):
 
 
 class ObjectEvent(ConnectorEvent):
+    """
+    Describes an event that pertains to an object in the controller.
+    """
+    # todo - distinguish system objects/profile objects
     def __init__(self, connector, idchain):
         super().__init__(connector)
         self.idchain = idchain
 
 
 class ObjectStateEvent(ObjectEvent):
+    # todo - either need separate events for user/system objects, or we need to
+    # include the profile, with a special value for the system profile.
     def __init__(self, connector, idchain, type, state):
         super().__init__(connector, idchain)
         self.type = type
@@ -167,7 +156,9 @@ class ObjectDeletedEvent(ObjectStateEvent):
 # some state, or simply reporting current profile with each object update.
 class ObjectUpdatedEvent(ObjectStateEvent):
     """
-    Describes the requested update and the resulting state of    the object.
+    Describes the requested update and the resulting state of the object.
+    The object itself may veto state changes, hence the requested state is not always the
+    same as the actual state.
     """
 
     def __init__(self, connector, idchain, type, state, requested_state=None):
@@ -364,8 +355,10 @@ class ObjectState:
     Describes the state of an object. It's really just an association of something with an
     object ID.
     """
-
     def __init__(self, idchain, type, state):
+        """
+        :param idchain  The identifier for the object (todo - should we add system/user distinction?)
+        """
         self.idchain = idchain
         self.type = type
         self.state = state
@@ -374,10 +367,10 @@ class ObjectState:
 class ConnectorEventFactory:
     """
     Responsible for creating an event.
-    """
 
+    """
     @abstractmethod
-    def __call__(self, *args, **kwargs):
+    def __call__(self, connector: "ControlboxEvents"):
         raise NotImplementedError()
 
 
@@ -505,6 +498,7 @@ class ReadSystemValueEventFactory(ConnectorEventFactory):
         id_chain, type, data_length = request
         buffer, = response
         value = connector.decode_state(type, buffer)
+        # todo - distinguish system vs profile objects
         return ObjectUpdatedEvent(connector, id_chain, type, value)
 
 
@@ -542,6 +536,12 @@ class ControlboxEvents:
     """
     Higher level, stateless interface to the controlbox protocol.
     Works in terms of python objects rather than protocol buffers.
+    This is a "lightweight" version of the api in controller.py which attempts to build an
+    object tree with distinct classes for each class type, and maintaining instances in a hiearchy
+    that proxy the corresponding remote instances in the controller.
+    This class does none of that, and provides an applciation-level view of the
+    controlbox functionality. For example, setting an object state is done by providing the state as
+    an appropriate python object. This is then encoded to the on the wire format by the codec.
     """
     eventFactories = {
         Commands.read_value: ReadValueEventFactory(),
@@ -568,7 +568,7 @@ class ControlboxEvents:
         """
         listens for events from the given protocol, decodes them and reposts them
         as application events.
-        :param: initial_codec  Describes the initial state of an object.
+        :param: constructor_codec  Describes the initial state of an object.
         :param: state_codec An object that knows to encode/decode from application objects to
             the the wire format for any give type of object.
         """
@@ -601,7 +601,7 @@ class ControlboxEvents:
 
     def _event_factory(self, command_id):
         """
-        fetches the decoder for a given command.
+        fetches the event factory for a given command.
         """
         return self.eventFactories.get(command_id)
 
