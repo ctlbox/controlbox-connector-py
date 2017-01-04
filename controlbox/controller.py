@@ -90,10 +90,12 @@ class ObjectLifetimeEvent(ObjectEvent):
 
 class ObjectCreatedEvent(ObjectLifetimeEvent):
     """ Event that is posted when an object has been created. """
+    # todo - currently not used here
 
 
 class ObjectDeletedEvent(ObjectLifetimeEvent):
     """ Event that is posted when an object has been deleted. """
+    # todo - currently not used here
 
 
 class ControlboxObject(BaseControlboxObject):
@@ -133,8 +135,9 @@ class ContainerTraits:
 class Controlbox:
     """
     The base interface for maintaining a connection to a controlbox instance.
+    It provides access to the protocol.
     """
-    def __init__(self, connector):
+    def __init__(self, connector: ControlboxProtocolV1):
         self._connector = connector
 
     @property
@@ -217,6 +220,12 @@ class UserObject(InstantiableObject, ContainedObject):
     def __init__(self, controller: Controlbox, container: ContainerTraits, slot: int):
         super(InstantiableObject, self).__init__(controller, container, slot)
         super(ContainedObject, self).__init__(controller)
+
+
+class SystemObject(ContainedObject):
+    def __init__(self, controller: Controlbox, container: ContainerTraits, slot: int):
+        super(ContainedObject, self).__init__(controller)
+
 
 
 class Container(ContainedObject, ContainerTraits):
@@ -385,13 +394,24 @@ class SystemRootContainer(RootContainerTraits, ControlboxObject):
         super().__init__(controller)
 
 
-class ValueDecoder:
-    """ Interface expected of decoders. """
-
+class Decoder:
     @abstractmethod
     def encoded_len(self):
         """ The number of byte expected for in the encoding of this value.  """
         raise NotImplementedError
+
+    @abstractmethod
+    def decode(self, buf):
+        raise NotImplementedError
+
+    # todo - why no decode_mask?
+    # with the current use case, this would only be used to decode
+    # the encoded command response back into an object, which isn't currently
+    # needed.
+
+
+class ValueDecoder(Decoder):
+    """ Interface expected of decoders. """
 
     def decode(self, buf):
         return self._decode(buf)
@@ -402,7 +422,7 @@ class ValueDecoder:
         raise NotImplementedError
 
 
-class ForwardingDecoder(ValueDecoder):
+class ForwardingDecoder(Decoder):
     """ Decoder implementation that forwards to another decoder instance. This allows the encoding implementation to be
     changed at runtime. """
     decoder = None
@@ -428,13 +448,23 @@ def make_default_mask(buf):
     return buf
 
 
-class ValueEncoder:
-    """ Interface expected of encoders. """
-
+class Encoder:
     @abstractmethod
     def encoded_len(self):
-        """ The number of byte expected for in the encoding of this value.  """
+        """ The number of byte expected for the encoding of this value.  """
         raise NotImplementedError
+
+    @abstractmethod
+    def encode(self, value):
+        raise NotImplementedError
+
+    @abstractmethod
+    def encode_masked(self, value):
+        raise NotImplementedError
+
+
+class ValueEncoder(Encoder):
+    """ Interface expected of encoders. """
 
     def encode(self, value):
         """ Encodes an object into a buffer. """
@@ -443,7 +473,7 @@ class ValueEncoder:
 
     def encode_masked(self, value):
         """ Encodes a tuple representing a value and a mask into a a pair of byte buffers encoding the value and the
-            write mask.
+            write mask. This is used to provide an encoding of a smaller part of the value.
         """
         buf, mask = self._encode_mask(value, bytearray(
             self.encoded_len()), bytearray(self.encoded_len()))
@@ -461,19 +491,19 @@ class ValueEncoder:
         return buf_value, buf_mask
 
     def _encode(self, value, buf):
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @staticmethod
     def mask_none(cls, value):
         return value or 0, -1 if value is not None else 0
 
 
-class ForwardingEncoder(ValueEncoder):
+class ForwardingEncoder(Encoder):
     """ Encoder implementation that forwards to another encoder instance. This allows the encoding implementation to
     be changed at runtime. """
     encoder = None
 
-    def __init__(self, encoder=None):
+    def __init__(self, encoder:Encoder=None):
         if encoder:
             self.encoder = encoder
 
@@ -485,6 +515,28 @@ class ForwardingEncoder(ValueEncoder):
 
     def encode_masked(self, value):
         return self.encoder.encode_masked(value)
+
+
+class Codec(Encoder, Decoder):
+    pass
+
+
+class CompositeCodec(Codec):
+    """
+    Creates a codec from separate encoder/decoder instances
+    """
+    def __init__(self, encoder:Encoder, decoder:Decoder):
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def encoded_len(self):
+        return self.encoder.encoded_len()
+
+    def decode(self, buf):
+        return self.decoder.decode(buf)
+
+    def encode(self, value):
+        raise self.encoder.encode(value)
 
 
 class ValueChangedEvent(ObjectEvent):
@@ -500,12 +552,20 @@ class ValueChangedEvent(ObjectEvent):
 
 
 class ValueObject(ContainedObject):
-
+    """
+    Describes an object in the container with an associated value
+    The value is typically a decoded/application-centric representation of the data sent over the wire
+    rather than raw data bytes.
+    """
     def __init__(self, controller, container, slot):
         super().__init__(controller, container, slot)
         self.previous = None
 
     def _update_value(self, new_value):
+        """
+        Updates the value associated with this object
+        If the value has changed, a ValueChangedEvent is fired.
+        """
         p = self.previous
         self.previous = new_value
         if p != new_value:
@@ -514,6 +574,9 @@ class ValueObject(ContainedObject):
 
 
 class ReadableObject(ValueObject, ValueDecoder):
+    """
+    A readable object knows how to
+    """
 
     def read(self):
         return self.controller.read_value(self)
@@ -543,16 +606,6 @@ class UnsignedLongDecoder(ValueDecoder):
 
     def encoded_len(self):
         return 2
-
-
-class LongDecoder(ValueDecoder):
-
-    def _decode(self, buf):
-        """ decodes a little-endian encoded 4 byte value. """
-        return ((((signed_byte(buf[3]) * 256) + buf[2]) * 256) + buf[1]) * 256 + buf[0]
-
-    def encoded_len(self):
-        return 4
 
 
 class UnsignedShortDecoder(ValueDecoder):
@@ -586,6 +639,11 @@ class ShortDecoder(ValueDecoder):
         return 2
 
 
+class ShortCodec(CompositeCodec):
+    def __init__(self):
+        super().__init__(ShortEncoder(), ShortDecoder())
+
+
 class ByteDecoder(ValueDecoder):
 
     def _decode(self, buf):
@@ -605,6 +663,11 @@ class ByteEncoder(ValueEncoder):
         return 1
 
 
+class ByteCodec(CompositeCodec):
+    def __init__(self):
+        super().__init__(ByteEncoder(), ByteDecoder())
+
+
 class LongEncoder(ValueEncoder):
 
     def _encode(self, value, buf):
@@ -618,6 +681,30 @@ class LongEncoder(ValueEncoder):
 
     def encoded_len(self):
         return 4
+
+
+class UnsignedLongEncoder(LongEncoder):
+    pass
+
+
+class LongDecoder(ValueDecoder):
+
+    def _decode(self, buf):
+        """ decodes a little-endian encoded 4 byte value. """
+        return ((((signed_byte(buf[3]) * 256) + buf[2]) * 256) + buf[1]) * 256 + buf[0]
+
+    def encoded_len(self):
+        return 4
+
+
+class LongCodec(CompositeCodec):
+    def __init__(self):
+        super().__init__(LongEncoder(), LongDecoder())
+
+
+class UnsignedLongCodec(CompositeCodec):
+    def __init__(self):
+        super().__init__(UnsignedLongEncoder(), UnsignedLongDecoder())
 
 
 class BufferDecoder(ValueDecoder):
@@ -741,6 +828,8 @@ class ReadWriteValue(ReadWriteBaseObject):
 
 class DynamicContainer(EmptyDefinition, UserObject, OpenContainerTraits, Container):
     type_id = 4
+    # todo - the application defines the type IDs, not the system, so
+    # remove this.
 
 
 class ControllerLoopState(CommonEqualityMixin):
@@ -799,6 +888,9 @@ class ControllerLoop(MaskedWritableObject, ReadWriteUserObject, ReadWriteValue):
 
 
 class ControllerLoopContainer(RootContainer):
+    """
+    Describves a controller loop container.
+    """
     def __init__(self, profile):
         super().__init__(profile)
         self.config_container = DynamicContainer(self.controller, self, 0)
@@ -826,6 +918,14 @@ class ControllerLoopContainer(RootContainer):
 
 
 def fetch_dict(d: dict, k, generator):
+    """
+    Fetches a key from the given dictionary. If the value does not exist (is None)
+    The generator is called with k to produce the value, which is then stored in the dictionary.
+    :param d:
+    :param k:
+    :param generator:
+    :return:
+    """
     existing = d.get(k, None)
     if existing is None:
         d[k] = existing = generator(k)
@@ -875,7 +975,6 @@ class TypedControlbox(Controlbox):
     :param: connector  The connector that provides the transport stream to the remote controller
     :param: object_types  A mapper between object classes and type ids
     """
-
     def __init__(self, connector, object_types: ObjectTypeMapper):
         """
         :param connector:       The connector that provides the v0.3.x protocol over a conduit.
@@ -925,6 +1024,9 @@ class TypedControlbox(Controlbox):
         self.protocol.async_log_handlers += lambda x: self.handle_async_log_values(x.value)
 
     def full_erase(self):
+        """
+        Erases all profiles in the device.
+        """
         available = self.active_and_available_profiles()
         for p in available[1]:
             self.delete_profile(p)
