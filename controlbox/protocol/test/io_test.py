@@ -1,10 +1,10 @@
 import unittest
 from unittest.mock import Mock
 
-from hamcrest import is_, assert_that, calling, raises
+from hamcrest import is_, assert_that, calling, raises, equal_to
 
 from controlbox.protocol.async import UnknownProtocolError
-from controlbox.protocol.io import RWCacheBuffer, determine_line_protocol
+from controlbox.protocol.io import RWCacheBuffer, determine_line_protocol, CaptureBufferedReader
 
 
 class RWCacheBufferTest(unittest.TestCase):
@@ -48,3 +48,17 @@ class DecodeLineProtocolTest(unittest.TestCase):
         assert_that(calling(determine_line_protocol).with_args(conduit, (sniffer, none)), raises(UnknownProtocolError))
         sniffer.assert_called_once_with('hey', conduit)
         none.assert_called_once_with('hey', conduit)
+
+
+class CaptureBufferedReaderTest(unittest.TestCase):
+
+    def test_constructor(self):
+        mock = Mock()
+        sut = CaptureBufferedReader(mock)
+        assert_that(sut.stream, is_(mock))
+
+    def test_peek_delegates(self):
+        mock = Mock()
+        mock.peek = Mock(return_value=[1])
+        sut = CaptureBufferedReader(mock)
+        assert_that(sut.peek(), is_(equal_to([1])))
