@@ -1,9 +1,10 @@
 import unittest
+from queue import Queue
 from unittest.mock import Mock, call
 
-from hamcrest import assert_that, is_
+from hamcrest import assert_that, is_, equal_to
 
-from controlbox.support.events import EventSource
+from controlbox.support.events import EventSource, QueuedEventSource
 
 
 class EventsTest(unittest.TestCase):
@@ -30,6 +31,13 @@ class EventsTest(unittest.TestCase):
         sut -= m1
         assert_that(sut._handlers, is_([]))
 
+    def test_fire_all_with_empty_events(self):
+        sut = EventSource()
+        m1 = Mock()
+        sut.add(m1)
+        sut.fire_all([])
+        m1.assert_not_called()
+
     def test_listeners(self):
         sut = EventSource()
         l1 = Mock()
@@ -45,3 +53,23 @@ class EventsTest(unittest.TestCase):
 
         sut.fire_all([1, 2, 3])
         l1.has_calls([call(1), call(2), call(3)])
+
+
+class QueuedEventSourceTest(unittest.TestCase):
+    def test_constructor(self):
+        sut = QueuedEventSource()
+        assert_that(sut.event_queue.empty(), True)
+
+    def test_fire_events(self):
+        sut = QueuedEventSource()
+        sut._fire_all = Mock()
+        sut.event_queue.put(1)
+        sut.event_queue.put(2)
+        sut.publish()
+        sut._fire_all.assert_called_once_with([1,2])
+
+    def test_fire_events_empty(self):
+        sut = QueuedEventSource()
+        sut._fire_all = Mock()
+        sut.publish()
+        sut._fire_all.assert_not_called()

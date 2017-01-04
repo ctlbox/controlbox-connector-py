@@ -31,6 +31,8 @@ class TCPServerDiscovery(PolledResourceDiscovery):
          :param service_subtype  The subtype of the TCP services to detect. This is an application-specific name.
             The type is qualified automatically with TCP and local supertypes.
             The subtype should not begin with an underscore, and does not need a separating "." at th eend.
+        :param use_zeroconf when True, the zeroconf service browser is instantiated
+        :param known_addresses an iterable of TCPServerEndpoint instances
         """
         super().__init__()
         self.event_queue = Queue()

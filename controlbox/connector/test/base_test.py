@@ -273,6 +273,13 @@ class AbstractDelegateConnectorTest(unittest.TestCase):
         sut._conduit = object()
         assert_that(sut.connected, is_(True))
 
+    def test_endpoint(self):
+        sut = AbstractDelegateConnector(Mock())
+        endpoint = "abcd"
+        sut.delegate.endpoint = endpoint
+        sut._conduit = object()
+        assert_that(sut.endpoint, is_(endpoint))
+
 
 class CloseOnErrorConnectorTest(unittest.TestCase):
     def test_constructor(self):
@@ -398,18 +405,22 @@ class ProtocolConnectorTest(unittest.TestCase):
     def test_disconnect_protocol_with_shutdown(self):
         self.disconnect(with_shutdown=True)
 
-    def disconnect(self, with_shutdown):
+    def test_disconnect_no_protocol(self):
+        self.disconnect(False, False)
+
+    def disconnect(self, with_shutdown, with_protocol=True):
         """ sets up a protocol for disconnection, with optional shutdown method """
         delegate = Mock()
         sut = ProtocolConnector(delegate, None)
+        protocol = None
+        if with_protocol:
+            protocol = Mock()
+            if with_shutdown:
+                protocol.shutdown = Mock()
+            else:
+                del protocol.shutdown
 
-        protocol = Mock()
-        if with_shutdown:
-            protocol.shutdown = Mock()
-        else:
-            del protocol.shutdown
-
-        sut._protocol = protocol
+            sut._protocol = protocol
         conduit = sut._conduit = Mock()
         delegate.disconnect = Mock()
         # when

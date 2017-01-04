@@ -8,6 +8,7 @@ from zeroconf import ServiceInfo
 from controlbox.conduit import server_discovery
 from controlbox.conduit.discovery import ResourceUnavailableEvent, ResourceAvailableEvent
 from controlbox.conduit.server_discovery import TCPServerDiscovery, ZeroconfTCPServerEndpoint, logger
+from controlbox.connector.socketconn import TCPServerEndpoint
 
 
 class TCPServerDiscoveryTest(unittest.TestCase):
@@ -108,6 +109,12 @@ class TCPServerDiscoveryTest(unittest.TestCase):
         sut.update()
         assert_that(sut.event_queue.empty(), is_(True))
         sut._fire_events.assert_not_called()
+
+    def test_known_addresses_are_published(self):
+        addresses = [ TCPServerEndpoint("host1", None, 80), TCPServerEndpoint("host2", None, 80) ]
+        sut = TCPServerDiscovery("mysvc", False, addresses)
+        self.assertEqual(sut.event_queue.get(), ResourceAvailableEvent(sut, addresses[0].key(), addresses[0]))
+        self.assertEqual(sut.event_queue.get(), ResourceAvailableEvent(sut, addresses[1].key(), addresses[1]))
 
 
 def log_connection_events(event):

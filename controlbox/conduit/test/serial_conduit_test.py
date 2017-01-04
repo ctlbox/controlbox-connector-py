@@ -78,6 +78,12 @@ class ConnectorSerialIntegrationTest(unittest.TestCase):
         s = "abc".encode()
         self.connection.output.writelines(s)
 
+    def test_flush_is_no_op(self):
+        sut = SerialConduit(serial.Serial())
+        self.assertEqual(sut.ser.flush, sut._no_flush);
+        sut.ser.flush()
+
+
 
 @unittest.skipUnless(virtualPortPair, "need virtual serial ports defined")
 class VirtualPortSerialTestCase(AsyncConnectorTest, unittest.TestCase):

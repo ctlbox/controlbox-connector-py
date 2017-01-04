@@ -25,9 +25,9 @@ class CommonEqualityMixin(object):
     local = threading.local()
 
     def __eq__(self, other):
-        if not hasattr(CommonEqualityMixin.local, 'seen'):
-            CommonEqualityMixin.local.seen = []
-        seen = CommonEqualityMixin.local.seen
+        if not hasattr(CommonEqualityMixin.local, '__eq_seen__'):
+            CommonEqualityMixin.local.__eq_seen__ = []
+        seen = CommonEqualityMixin.local.__eq_seen__
         return hasattr(other, '__dict__') and isinstance(other, self.__class__) \
             and self._dicts_equal(other, seen)
 

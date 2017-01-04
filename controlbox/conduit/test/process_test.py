@@ -5,7 +5,7 @@ from unittest.mock import patch, Mock
 import subprocess
 from hamcrest import assert_that, equal_to, is_
 
-from controlbox.conduit.process_conduit import ProcessConduit
+from controlbox.conduit.process_conduit import ProcessConduit, ProcessDiscovery
 # todo - these tests will need to be made OS-agnostic
 # they are also not good unit tests
 from controlbox.config.config import configure_module
@@ -90,6 +90,26 @@ class ProcessConduitTest(unittest.TestCase):
             sut.close()
             mock.terminate.assert_not_called()
             mock.wait.assert_not_called()
+
+
+class ProcessDiscoveryTest(unittest.TestCase):
+    def test_constructor(self):
+        file = "a file"
+        sut = ProcessDiscovery(file)
+        self.assertIs(sut.file, file)
+        self.assertEquals(sut.previous, {})
+
+    def test_resource_file_not_exists(self):
+        file = "a file/that doesnt/exist"
+        sut = ProcessDiscovery(file)
+        self.assertEqual({}, sut._fetch_available())
+
+    def test_resource_file_exists(self):
+        file = __file__
+        sut = ProcessDiscovery(file)
+        self.assertEqual({file:file}, sut._fetch_available())
+
+
 
 if __name__ == '__main__':
     unittest.main()

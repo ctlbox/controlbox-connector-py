@@ -8,15 +8,6 @@ from controlbox.connector.base import AbstractConnector, ConnectorError
 logger = logging.getLogger(__name__)
 
 
-def is_executable(file):
-    """
-    Determines if the given file is executable.
-    :param file: the filename to check.
-    :return: True if the file is executable.
-    """
-    return os.path.isfile(file) and os.access(file, os.X_OK)
-
-
 class ProcessConnector(AbstractConnector):
     """ Instantiates a process and connects to it via standard in/out. """
 
@@ -25,7 +16,6 @@ class ProcessConnector(AbstractConnector):
         self.image = image
         self.args = args
         self.cwd = cwd
-        self.build_conduit = lambda x: x
 
     @property
     def endpoint(self):
@@ -44,4 +34,15 @@ class ProcessConnector(AbstractConnector):
             raise ConnectorError from e
 
     def _try_available(self):
-        return is_executable(self.image)
+        return self._is_executable(self.image)
+
+    @staticmethod
+    def _is_executable(file):
+        """
+        Determines if the given file is executable.
+        :param file: the filename to check.
+        :return: True if the file is executable.
+        """
+        return os.path.isfile(file) and os.access(file, os.X_OK)
+
+

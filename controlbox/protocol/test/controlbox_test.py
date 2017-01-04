@@ -1,10 +1,11 @@
 import io
 from io import BufferedReader, BytesIO
+from unittest.mock import Mock
 
 from hamcrest import assert_that, is_, equal_to, raises, calling, not_
 
 from controlbox.protocol.controlbox import HexToBinaryInputStream, ChunkedHexTextInputStream, BinaryToHexOutputStream,\
-    ControlboxProtocolV1, build_chunked_hexencoded_conduit
+    ControlboxProtocolV1, build_chunked_hexencoded_conduit, CaptureBufferedReader
 from controlbox.conduit.base import DefaultConduit
 
 import unittest
@@ -85,6 +86,7 @@ class ChunkedHexTextInputStreamTestCase(unittest.TestCase):
 
     def test_read_or_peek_on_empty_stream_returns_empty(self):
         s = ChunkedHexTextInputStream(BufferedReader(io.BytesIO(b'a')))
+        assert_that(s.peek(0), is_(equal_to(b'')))
         assert_that(s.peek(1), is_(equal_to(b'a')))
         assert_that(s.read(20), is_(equal_to(b'a')))
         assert_that(s.peek(1), is_(equal_to(b'')))
@@ -95,6 +97,26 @@ class ChunkedHexTextInputStreamTestCase(unittest.TestCase):
         text = ChunkedHexTextInputStream(base)
         return collect_stream(text)
 
+    def test_stream_no_peek(self):
+        stream = Mock()
+        stream.read = Mock(return_value=[])
+        sut = ChunkedHexTextInputStream(stream)
+        assert_that(sut.read(), is_(equal_to(b'')))
+
+    def test_empty_read_does_not_delegate(self):
+        stream = Mock()
+        stream.read = Mock(return_value=[])
+        sut = ChunkedHexTextInputStream(stream)
+        assert_that(sut.read(0), is_(equal_to(b'')))
+        stream.read.assert_not_called()
+
+    def test_stream_close(self):
+        stream = Mock()
+        stream.close = Mock(return_value=[])
+        sut = ChunkedHexTextInputStream(stream)
+        sut.close()
+        stream.close.assert_not_called()
+
 
 class BinaryToHexOutputStreamTestCase(unittest.TestCase):
 
@@ -103,6 +125,11 @@ class BinaryToHexOutputStreamTestCase(unittest.TestCase):
         stream = self.create_stream(store)
         stream.write([129, 255])
         assert_that(store.getvalue(), is_(equal_to(b"81 FF ")))
+
+    def test_stream_must_be_writable(self):
+        store = Mock()
+        store.writable = Mock(return_value=False)
+        assert_that(calling(self.create_stream).with_args(store), raises(ValueError))
 
     def test_write_annotation(self):
         store = io.BytesIO()
@@ -186,6 +213,10 @@ class TextHexStreamTestCase(unittest.TestCase):
         assert_that(s.writable(), is_(False))
         assert_that(s.readable(), is_(True))
 
+    def test_peek_count_zero(self):
+        sut = self.build_stream(b"content")
+        assert_that(sut.peek())
+
     def build_stream(self, content):
         base = BufferedReader(io.BytesIO(content))
         text = ChunkedHexTextInputStream(base)
@@ -195,6 +226,20 @@ class TextHexStreamTestCase(unittest.TestCase):
     def stream_read(self, content):
         hexstream = self.build_stream(content)
         return collect_stream(hexstream)
+
+
+class CaptureBufferedReaderTest(unittest.TestCase):
+
+    def test_constructor(self):
+        mock = Mock()
+        sut = CaptureBufferedReader(mock)
+        assert_that(sut.stream, is_(mock))
+
+    def test_peek_delegates(self):
+        mock = Mock()
+        mock.peek = Mock(return_value=[1])
+        sut = CaptureBufferedReader(mock)
+        assert_that(sut.peek(), is_(equal_to([1])))
 
 
 class BrewpiV030ProtocolSendRequestTestCase(unittest.TestCase):

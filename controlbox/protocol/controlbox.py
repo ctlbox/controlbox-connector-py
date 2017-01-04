@@ -257,7 +257,7 @@ class ChunkedHexTextInputStream(IOBase):
     def read(self, count=-1):
         if not count:
             return ChunkedHexTextInputStream.no_data
-        self.fetch_next()
+        self._fetch_next()
         result = self.data
         self.data = ChunkedHexTextInputStream.no_data
         return result
@@ -265,10 +265,10 @@ class ChunkedHexTextInputStream(IOBase):
     def peek(self, count=0):
         if not count:
             return ChunkedHexTextInputStream.no_data
-        self.fetch_next()
+        self._fetch_next()
         return self.data
 
-    def fetch_next(self):
+    def _fetch_next(self):
         while not self.data and self.comment_level >= 0 and self._stream_has_data():
             d = self.stream.read(1)
             if not d:
@@ -302,6 +302,13 @@ class ChunkedHexTextInputStream(IOBase):
 
 
 class CaptureBufferedReader:
+    """
+    Captures the data read from a stream into a buffer.
+    This allows streaming, parsing and looking for a delimiter
+    and capturing the data read.
+
+    The captured data is available via as_bytes()
+    """
     def __init__(self, stream):
         self.buffer = BytesIO()
         self.stream = stream

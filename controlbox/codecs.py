@@ -58,10 +58,11 @@ class TypeMappingCodec(ConnectorCodec):
 
 class DictionaryMappingCodec(TypeMappingCodec):
     def __init__(self, codecs: dict):
-        def lookup(type):
-            return codecs.get(type)
+        super().__init__(self.lookup)
+        self.codecs_dict = codecs
 
-        super().__init__(lookup)
+    def lookup(self, type):
+        return self.codecs_dict.get(type)
 
 
 class BaseState(CommonEqualityMixin, StringerMixin):

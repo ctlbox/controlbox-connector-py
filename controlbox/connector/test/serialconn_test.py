@@ -83,6 +83,15 @@ class SerialConnectorTest(unittest.TestCase):
         assert_that(conduit, is_(instance_of(SerialConduit)))
         assert_that(conduit.target, is_(serial))
 
+    def test_disconnect(self):
+        serial = Mock()
+        serial.isOpen.return_value = False
+        sut = SerialConnector(serial)
+        conduit = Mock()
+        conduit.close = Mock()
+        sut._conduit = conduit
+        sut.disconnect()
+
 
 def log_connection_events(event):
     if isinstance(event, ResourceAvailableEvent):
