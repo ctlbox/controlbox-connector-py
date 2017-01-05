@@ -1,16 +1,12 @@
-import io
-from io import BufferedReader, BytesIO
-from unittest.mock import Mock
-
-from hamcrest import assert_that, is_, equal_to, raises, calling, not_
-
-from controlbox.protocol.controlbox import ControlboxProtocolV1, build_chunked_hexencoded_conduit
-from controlbox.conduit.base import DefaultConduit
-
 import unittest
+from io import BufferedReader
+from io import BytesIO
 
-from controlbox.protocol.io import RWCacheBuffer
+from hamcrest import assert_that, is_, equal_to, not_
 
+from controlbox.conduit.base import DefaultConduit
+from controlbox.protocol.controlbox import ControlboxProtocolV1, build_chunked_hexencoded_conduit, ResponseDecoder
+from controlbox.protocol.io import RWCacheBuffer, CaptureBufferedReader
 
 
 class BrewpiV030ProtocolSendRequestTestCase(unittest.TestCase):
@@ -133,6 +129,28 @@ class BrewpiV030ProtocolHexEncodingTestCase(unittest.TestCase):
     def assert_request_sent(self, expected):
         actual = self.output_buffer.reader.readlines()[0]
         assert_that(actual, equal_to(expected))
+
+
+class ResponseDecoderTest(unittest.TestCase):
+
+    def test__parse_request_is_abstract(self):
+        sut = ResponseDecoder()
+        self.assertRaises(NotImplementedError, sut._parse_request, [])
+
+    def test_read_chain_empty(self):
+        self.assertEqual(bytearray(), self.chain_decode(bytes()))
+
+    def test_read_chain_single(self):
+        self.assertEqual(bytearray([56]), self.chain_decode(bytes([56])))
+
+    def test_read_chain_multiple(self):
+        self.assertEqual(bytearray([0x10, 0x20, 0x30]), self.chain_decode(bytes([0x90, 0xA0, 0x30])))
+
+    def chain_decode(self, buffer):
+        sut = ResponseDecoder()
+        return sut._read_chain(CaptureBufferedReader(BufferedReader(BytesIO(buffer))))
+
+
 
 
 if __name__ == '__main__':

@@ -1,10 +1,10 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 from hamcrest import assert_that, is_, equal_to, has_length
 
 from controlbox.controller import fetch_dict, ForwardingDecoder, ValueDecoder, ValueEncoder, ForwardingEncoder, \
     ControllerLoop, ControllerLoopState, ControllerLoopContainer, SystemProfile, \
-    DynamicContainer, TypedControlbox, RootContainer, ValueObject, LongEncoder
+    DynamicContainer, TypedControlbox, RootContainer, ValueObject, LongEncoder, Controlbox
 import unittest
 
 
@@ -239,3 +239,13 @@ class BaseControllerAsyncLogTest(unittest.TestCase):
             they can be retrieved potentially after the object has been deleted. (Race-condition.)"""
         sut = self.sut
         sut.handle_async_log_values((LongEncoder().encode(123456), [], [([1], b'\x10\x20')]))
+
+
+class ControlboxTest(unittest.TestCase):
+
+    def test_connector_protocol(self):
+        connector = Mock()
+        protocol = "123"
+        connector.protocol = protocol
+        sut = Controlbox(connector)
+        self.assertEqual(sut.protocol, protocol)

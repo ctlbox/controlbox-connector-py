@@ -1,8 +1,12 @@
 """
 One layer above the parsed protocol.
-Listens to events from the connector protocol and fires events to registered listeners
+Maps between state and the encoded binary representation
+via a set of codecs.
 
-Codecs are used to convert from the on-wire format to a python representation of the data.
+Listens to events from the connector protocol for object updates,
+and fires events to registered listeners. The raw event data
+is decoded to application state.
+
 """
 from abc import abstractmethod
 
@@ -21,16 +25,27 @@ from controlbox.support.mixins import StringerMixin
 class ConnectorListener:
     """
     A listener interface that receives notifications of information from the controller.
-    The object state is converted from on+the+wire binary format into an object representation.
-    See ConnectorCodec.
+    The object state is converted from binary format into an object representation.
+    See Codec.
     """
 
-    def object_created(self, idchain, state):
+    def object_created(self, idchain, type, state):
         """
         notifies that an object was created.
-        :param: idchain
+        :param: idchain The location of the object
+        :param: type the type of the object (an integer)
         :param: state the construction state of the object.
         """
+
+    # todo - object definition?
+    # def object_definition(self, idchain, type, config):
+    #     """
+    #     notifies about the definition of an object
+    #     :param idchain:
+    #     :param type:
+    #     :param config:
+    #     :return:
+    #     """
 
     def object_deleted(self, idchain):
         """
@@ -47,14 +62,17 @@ class ConnectorListener:
 
     def object_state(self, idchain, state):
         """
-        notifies that the current state of a number of objects. (The state description is complete.)
+        notifies that the current state of an object. This is in response to a
+        read request.
         """
 
     def object_update(self, idchain, state):
         """
-        notifies that the state of the object has changed in response to
-        an update. Note that internal updates to state within the controller do not
-        generate an update event. These state changes are made available via state events.
+        notifies the state of the object response to
+        an update (object write). Note that internal updates to state within the controller do not
+        generate an update event. These state changes are made available via object_state events.
+        # todo - perhaps in the python layer we do away with the user/system split in events and read/write
+        and instead include the profile?
         """
 
     def system_object_update(self, idchain, state):
@@ -110,17 +128,17 @@ class ObjectEvent(ConnectorEvent):
     """
     Describes an event that pertains to an object in the controller.
     """
-    # todo - distinguish system objects/profile objects
-    def __init__(self, connector, idchain):
+    def __init__(self, connector, system, idchain):
         super().__init__(connector)
         self.idchain = idchain
+        self.system = system
 
 
 class ObjectStateEvent(ObjectEvent):
     # todo - either need separate events for user/system objects, or we need to
     # include the profile, with a special value for the system profile.
-    def __init__(self, connector, idchain, type, state):
-        super().__init__(connector, idchain)
+    def __init__(self, connector, system, idchain, type, state):
+        super().__init__(connector, system, idchain)
         self.type = type
         self.state = state
 
@@ -136,7 +154,7 @@ class ObjectCreatedEvent(ObjectStateEvent):
     Event notifying that an object was created in the currently active profile.
     """
     def __init__(self, connector, idchain, type, state):
-        super().__init__(connector, idchain, type, state)
+        super().__init__(connector, False, idchain, type, state)
 
     def apply(self, visitor: 'ConnectorEventVisitor'):
         return visitor.object_created(self)
@@ -144,16 +162,12 @@ class ObjectCreatedEvent(ObjectStateEvent):
 
 class ObjectDeletedEvent(ObjectStateEvent):
     def __init__(self, connector, idchain, type, state=None):
-        super().__init__(connector, idchain, type, state)
+        super().__init__(connector, False, idchain, type, state)
 
     def apply(self, visitor: 'ConnectorEventVisitor'):
-        return visitor.object_updated(self)
+        return visitor.object_deleted(self)
 
 
-# todo - the fully qualified address of an object in a controller should include the profile_id, or -1 for
-# system objects
-# since the profile_id isn't sent with every update (at least, not at present), this does mean requiring
-# some state, or simply reporting current profile with each object update.
 class ObjectUpdatedEvent(ObjectStateEvent):
     """
     Describes the requested update and the resulting state of the object.
@@ -162,7 +176,7 @@ class ObjectUpdatedEvent(ObjectStateEvent):
     """
 
     def __init__(self, connector, idchain, type, state, requested_state=None):
-        super().__init__(connector, idchain, type, state)
+        super().__init__(connector, False, idchain, type, state)
         self.requested_state = requested_state
 
     def apply(self, visitor: 'ConnectorEventVisitor'):
@@ -173,7 +187,7 @@ class ProfileListedEvent(ProfileEvent):
     """
     Describes the requested update and the resulting state of the object.
     :param: definitions an iterable of object definitions. Each definition is a
-        ObjectState instance.
+        ObjectDefinition instance (id_chain, type, config).
     """
 
     def __init__(self, connector, profile_id, definitions):
@@ -234,9 +248,11 @@ class ControllerResetEvent(ConnectorEvent):
         return visitor.controller_reset(self)
 
 
-class ContainerObjectsLeggedEvent(ObjectEvent):
-    def __init__(self, connector, flags, id_chain):
-        super().__init__(connector, id_chain, )
+class ContainerObjectsLoggedEvent(ObjectEvent):
+    # todo - should this include the logged values too?
+    def __init__(self, connector, flags, id_chain, values):
+        super().__init__(connector, False, id_chain)
+        self.values = values
 
     def apply(self, visitor: 'ConnectorEventVisitor'):
         return visitor.objects_logged(self)
@@ -270,9 +286,7 @@ class CommandFailedEvent(ConnectorEvent):
 
 class ConnectorEventVisitor:
     """
-    A listener interface that receives notifications of information from the controller.
-    The object state is converted from on+the+wire binary format into an object representation.
-    See ConnectorCodec.
+    A visitor to handle the various types of events.
     """
 
     def object_created(self, event: ObjectCreatedEvent):
@@ -285,9 +299,9 @@ class ConnectorEventVisitor:
         notifies that an object was deleted.
         """
 
-    def object_read(self, event: ObjectUpdatedEvent):
+    def object_state(self, event: ObjectStateEvent):
         """
-        notifies that the current state of a number of objects. (The state description is complete.)
+        notifies that the current state of an object.
         """
 
     def object_updated(self, event: ObjectUpdatedEvent):
@@ -298,19 +312,17 @@ class ConnectorEventVisitor:
         """
 
     def system_object_update(self, event: ObjectUpdatedEvent):
-        # todo - should we keep distinguishing system vs profile objects like this?
-        # would it be cleaner to use a profile_id field, which is 0 for system objects?
         """
         notifies that the state of the system object has changed in response to an
         external update.
         """
 
-    def system_object_state(self, event: ObjectUpdatedEvent):
+    def system_object_state(self, event: ObjectStateEvent):
         """
         notifies the state of a system object.
         """
 
-    def objects_logged(self, event: ContainerObjectsLeggedEvent):
+    def objects_logged(self, event: ContainerObjectsLoggedEvent):
         """
         notifies the state of all objects in a container.
         """
@@ -352,25 +364,31 @@ class ConnectorEventVisitor:
 
 class ObjectState:
     """
-    Describes the state of an object. It's really just an association of something with an
-    object ID.
+    Describes the state of an object.
     """
     def __init__(self, idchain, type, state):
         """
-        :param idchain  The identifier for the object (todo - should we add system/user distinction?)
+        :param idchain  The identifier for the object
         """
         self.idchain = idchain
         self.type = type
         self.state = state
 
 
+class ObjectDefinition(ObjectState):
+    """
+    Describes the construction state of an object.
+    """
+
+
 class ConnectorEventFactory:
     """
-    Responsible for creating an event.
-
+    Responsible for creating an event from a command response. The request
+    and command_id are provided for context.
+    :param request the decoded request.
     """
     @abstractmethod
-    def __call__(self, connector: "ControlboxEvents"):
+    def __call__(self, connector: "ControlboxEvents", response, request, command_id):
         raise NotImplementedError()
 
 
@@ -614,28 +632,28 @@ class ControlboxEvents:
     def decode_config(self, type, buffer):
         return self.constructor_codec.decode(type, buffer)
 
-    def encode_config(self, type, state):
-        return self.constructor_codec.encode(type, state)
+    def encode_config(self, type, config):
+        return self.constructor_codec.encode(type, config)
 
     def decode_definition(self, object_def):
         id_chain, type, data = object_def
         return ObjectState(id_chain, type, self.decode_config(type, data))
 
-    def create(self, id_chain, object_type, state):
+    def create(self, id_chain, object_type, config):
         """ creates a new instance on the controller with the given initial state"""
-        data, mask = self.encode_config(type, state)
+        data, mask = self.encode_config(type, config)
         if mask is not None:
-            raise ValueError("object definition is not complete: %s", state)
+            raise ValueError("object definition is not complete: %s", config)
         return self.controlbox.protocol.create_object(id_chain, object_type, data)
 
-    def delete(self, id_chain, object_type):
+    def delete(self, id_chain, object_type=0):
         """
         Deletes the object at the given location in the current profile.
         """
         return self.controlbox.protocol.delete_object(id_chain, object_type)
 
     def read(self, id_chain, type=0):
-        """ read the state of the object. the result is available via the returned
+        """ read the state of a system object. the result is available via the returned
             future and also via the listener. """
         # todo - how to wrap the result from the future to apply the decoding?
         # will need a future wrapper with a mapping function to wrap the result.

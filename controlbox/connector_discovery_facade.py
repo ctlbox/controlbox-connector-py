@@ -27,9 +27,10 @@ logger = logging.getLogger(__name__)
 
 
 class ManagedConnection(AsyncLoop):
-    """ maintains an association between a resource and the connector used to access the endpoint, and
+    """ Maintains an association between a resource and the connector used to access the endpoint, and
      notifies an event source when the connection is opened and closed.
-    The connection is managed by calling maintain().
+    The connection is managed synchronously by calling maintain().
+    Alternatively, calling start() will run the connection management as a separate thread.
 
     Fires ConnectorConnectedEvent and ConnectorDisconnectedEvent as the connection state changes.
 
@@ -39,9 +40,9 @@ class ManagedConnection(AsyncLoop):
         this managed connection attempts to open it after retry_preiod.
     :param: retry_period    How often to try opening the connection when it's closed
     :param: events          event source to post the resource events when the connection
-        opens and closed.
+        opens and closed. Should support the method fire(...)
      """
-    # todo add a mixin for connector listener so the conenctor events
+    # todo add a mixin for connector listener so the connector events
     # are hooked up in a consistent way
     def __init__(self, resource, connector: Connector, retry_period, events):
         super().__init__()
@@ -53,13 +54,17 @@ class ManagedConnection(AsyncLoop):
         self.events = events
 
     def _connector_events(self, *args, **kwargs):
-        """propagate connector events to the manager """
+        """ propagates connector events to the external events handler """
         self.events.fire(*args, **kwargs)
-        # events will place events in a queue that are posted by the connector manager
 
     def _open(self):
+        """
+        attempts to establish the connection.
+        :return: True if the connector was not connected and available
+        """
         connector = self.connector
-        if not connector.connected and connector.available:
+        try_open = not connector.connected and connector.available
+        if try_open:
             try:
                 connector.connect()
                 logger.info("device connected: %s" % self.resource)
@@ -67,14 +72,27 @@ class ManagedConnection(AsyncLoop):
                 if (logger.isEnabledFor(logging.DEBUG)):
                     logger.exception(e)
                     logger.debug("Unable to connect to device %s: %s" % (self.resource, e))
+        return try_open
 
     def _close(self):
+        """
+        Closes the connection to the connector.
+        :return:
+        """
         was_connected = self.connector.connected
         self.connector.disconnect()
         if was_connected:
             logger.info("device disconnected: %s" % self.resource)
 
     def loop(self):
+        """
+        open the connector, and while connected,
+        read responses from the protocol.
+
+        :return:
+        """
+        # todo - I feel this should be a separate utility class
+        # to keep the manager focused on connectors, and not pumping protocol events
         self._open()
         while self.connector.connected:
             success = False
@@ -88,11 +106,24 @@ class ManagedConnection(AsyncLoop):
         self.stop_event.wait(self.retry_period)
 
     def maintain(self, current_time):
-        if self._needs_retry(current_time):
+        """
+        Maintains the connection by attempting to open it if not already open.
+        :param current_time: the current time. Used to
+        determine if the connection was tried or not.
+        :return:
+        """
+        will_try = self._needs_retry(current_time)
+        if will_try:
             self.last_opened = current_time
             self._open()
+        return will_try
 
     def _needs_retry(self, current_time):
+        """
+        Determines if it is time to try opening the connector.
+        :param current_time: The current time.
+        :return: True if it is time to retry opening the connector.
+        """
         return self.last_opened is None or ((current_time - self.last_opened) >= self.retry_period)
 
 
@@ -106,14 +137,19 @@ class ControllerConnectionManager:
     the resource is tried so long as it's presence is known.
 
     Resources are added via the "connected()" method and removed via "disconnected()`.
+    The corresponding connection is opened or closed as appropriate.
 
     Fires ConnectorConnectedEvent when a connector is available.
-    Fires ConnectorDisconnectedEvent when the connector is disconencted.
+    Fires ConnectorDisconnectedEvent when the connector is disconnected.
 
     """
 
     def __init__(self, retry_period=5):
+        """
+        :param retry_period: how frequently (in seconds) to refresh connections that are not connected
+        """
         self.retry_period = retry_period
+        # a map from resource to ManagedConnection
         self._connections = dict()
         self.events = QueuedEventSource()
 
@@ -129,11 +165,17 @@ class ControllerConnectionManager:
         """ Notifies this manager that the given connector is available as a possible controller connection.
             :param: resource    A key identifying the resource
             :param: connector  A Connector instance.
+            If the resource is already connected to the given connector,
+            the method returns quietly. Otherwise, the existing managed connection
+            is stopped before being replaced with a new managed connection
+            to the connector.
             """
         previous = self._connections.get(resource, None)
         if previous is not None:
             if previous.connector is connector:
                 return
+            else:
+                previous.stop()
         conn = self._connections[resource] = self._new_managed_connection(resource, connector,
                                                                           self.retry_period, self.events)
         conn.start()
@@ -145,7 +187,7 @@ class ControllerConnectionManager:
     def connections(self):
         """
         retrieves a mapping from the resource key to the ManagedConnection.
-        Note that connections may not be connected.
+        Note that connections may or may not be connected.
         """
         return dict(self._connections)
 

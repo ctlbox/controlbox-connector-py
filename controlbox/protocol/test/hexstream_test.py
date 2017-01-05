@@ -94,6 +94,7 @@ class ChunkedHexTextInputStreamTestCase(unittest.TestCase):
     def test_stream_no_peek(self):
         stream = Mock()
         stream.read = Mock(return_value=[])
+        del stream.peek
         sut = ChunkedHexTextInputStream(stream)
         assert_that(sut.read(), is_(equal_to(b'')))
 

@@ -1,6 +1,6 @@
 """
-The connector interfaces with an external entity that communicates via a conduit using a particular protocol.
-The connector api provides a higher-level OO interface to the controller.
+The connector interfaces with an external endpoint and establishes a conduit
+to that endpoint.
 
-A connector can be thought of as a conduit and protocol factory.
+The connector fires events as the endpoint is connected and disconencted.
 """

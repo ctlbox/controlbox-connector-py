@@ -1,5 +1,5 @@
 """
-Provides an implementation of the control box protocol via the class ControllerProtocolV030.
+Provides an implementation of the controlbox protocol via the class ControlboxProtocolV1.
 """
 
 from abc import abstractmethod, ABCMeta
@@ -82,10 +82,10 @@ def decode_id(buf) -> list():
 
 
 class ByteArrayRequest(Request):
-    """ represents a request as an array or bytes. The byte array defines the key for the reuqest, since responses
+    """ represents a request as an array or bytes. The byte array defines the key for the request, since responses
         always repeat the request data verbatim. """
 
-    def __init__(self, data):
+    def __init__(self, data: bytes):
         self.data = data
 
     def to_stream(self, file):
@@ -99,6 +99,9 @@ class ByteArrayRequest(Request):
 
 
 class Commands:
+    """
+    Describes the command name and the corresponding ID
+    """
     no_cmd = 0
     read_value = 1
     write_value = 2
@@ -128,7 +131,7 @@ class Commands:
 # FutureRequest.)
 
 
-class ResponseDecoder(metaclass=ABCMeta):
+class ResponseDecoder():
     """  parses the response data into the data block corresponding to the original request
          and decodes the data block that is the additional response data.
     """
@@ -136,26 +139,33 @@ class ResponseDecoder(metaclass=ABCMeta):
     def parse_request(self, cmd_id: int, stream: BufferedIOBase):
         """ read the portion of the response that corresponds to the original request.
             Delegates the main parsing of the command portion of the response to the
-            _parse() method. The command isn't parsed into anything - only that we determine
+            _parse_request() method. The command isn't parsed into anything - only that we determine
             how much of the input buffer corresponds to the original command request.
         """
-        buf = CaptureBufferedReader(stream)
-        buf.push(bytes([cmd_id]))
-        structure = self._parse_request(buf)
-        return buf.as_bytes(), structure  # return the bytes read from the stream so far.
+        capture = CaptureBufferedReader(stream)
+        capture.push(bytes([cmd_id]))
+        structure = self._parse_request(capture)
+        return capture.as_bytes(), structure  # return the bytes read from the stream so far.
 
     @abstractmethod
     def _parse_request(self, buf):
         """
-        parse the buffer so that the content is validated, streamd and the semantic parts
+        parse the buffer so that the content is validated, streamed and the semantic parts
         decoded/separated.
         """
         raise NotImplementedError
 
-    def _read_chain(self, buf):
+    def _read_chain(self, stream):
+        """
+        reads an id-chain from the stream. If the stream has no data, the result
+        is an empty bytearray. Otherwise the result is one or more bytes.
+        :param stream: A stream containing an optional byte < 128, prefixed by
+            one or more bytes >= 128.
+        :return: a bytearray containing the id-chain
+        """
         result = bytearray()
-        while self.has_data(buf):
-            b = self._read_byte(buf)
+        while self.has_data(stream):
+            b = self._read_byte(stream)
             result.append(b & 0x7F)
             if b < 0x80:
                 break

@@ -4,6 +4,11 @@ a library of classes for potential reuse in different controlbox applications.
 
 from controlbox.controller import ReadWriteSystemObject, mask, LongDecoder, ShortDecoder, ShortEncoder, LongEncoder
 
+"""
+#todo - I'm not happy with these proxy objects - the public interface is littered with encoding/decoding methods
+the encoding/decoding are best handled by an external codec and the remote value maintained as an attribute
+by moving the codec functionality externally it becomes reusable with the lightweight API too.
+"""
 
 class ElapsedTime(ReadWriteSystemObject):
     """

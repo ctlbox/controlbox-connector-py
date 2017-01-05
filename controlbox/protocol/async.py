@@ -40,11 +40,19 @@ class FutureValue(Future):
 
     def __init__(self):
         super().__init__()
-        self.value_extractor = lambda x: x
+
+    def _value_extractor(self, value):
+        """
+        The value extractor allows processing of the result to arrive at the
+        value returned in `value`.
+        :param value:
+        :return:
+        """
+        return value
 
     def value(self, timeout=None):
         """ allows the provider to set the result value but provide a different (derived) value to callers. """
-        value = self.value_extractor(self.result(timeout))
+        value = self._value_extractor(self.result(timeout))
         if isinstance(value, BaseException):
             raise value
         return value
@@ -58,12 +66,12 @@ class Request:
         """ Encodes the request as bytes in a stream.
         :param file: the file-like instance to stream this request to.
         """
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @property
-    def response_keys(self):
+    def response_keys(self) -> list:
         """ retrieves an iterable over keys that are used to correlate requests with corresponding responses. """
-        raise NotImplementedError
+        raise NotImplementedError()
         # todo - maybe just use simple iteration looking for a matching response?
 
 
@@ -79,44 +87,59 @@ class Response:
             where this response is being used as a factory.
         :rtype:Response
         """
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @property
     def response_key(self):
         """
         :return: a key that can be used to pair this response with a previously sent request.
+        Will be None if this response is unsolicited.
         """
-        raise NotImplementedError
+        raise NotImplementedError()
 
     @property
     def value(self):
-        raise NotImplementedError
+        """
+        The decoded representation of the response value.
+        :return:
+        """
+        raise NotImplementedError()
+
+    @value.setter
+    def value(self, value):
+        raise NotImplementedError()
 
 
 class FutureResponse(FutureValue):
     """ Relates a request and it's future response."""
 
     def __init__(self, request: Request):
+        """
+        :param request: The request this response is for.
+        """
         super().__init__()
         self._request = request
-        self.value_extractor = lambda r: r.value
+
+    def _value_extractor(self, r):
+        return r.value
 
     @property
     def request(self):
         return self._request
 
     @property
-    def response(self):
-        """ blocking fetch of the response. """
-        return self.result()
+    def response(self, timeout=None) -> Response:
+        """ blocking fetch of the response. Note that this retrieves
+            the entire response instance, and not just the response value. """
+        return self.result(timeout)
 
     @response.setter
-    def response(self, value: Response):
+    def response(self, result: Response):
         """
         Sets the successful completion of this future result.
         :param value: The response associated with this future's request.
         """
-        self.set_result(value)
+        self.set_result(result)
 
 
 class ResponseSupport(Response):
@@ -157,7 +180,7 @@ class AsyncLoop:
         The background thread is registered as a daemon.
     """
 
-    def __init__(self, fn: Callable=None, args=()):
+    def __init__(self, fn: Callable=None, args=(), log=logger):
         """
         :param fn the function to run
         :param args arguments to pass to fn
@@ -166,6 +189,7 @@ class AsyncLoop:
         self.args = args
         self.stop_event = None   # condition variable that signifies the background thread should stop
         self.background_thread = None
+        self.logger = log
 
     def start(self):
         """
@@ -179,7 +203,7 @@ class AsyncLoop:
             t.start()
 
     def exception_handler(self, e):
-        logger.exception(e)
+        self.logger.exception(e)
 
     def _run(self):
         """ The processing loop for the background thread.

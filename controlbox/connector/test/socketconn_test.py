@@ -29,7 +29,7 @@ class SocketConnectorTest(unittest.TestCase):
             socket.socket = Mock()
             socket.socket.return_value = sock_instance
             conduit = sut._connect()
-            sut.disconnect()
+            sut._disconnect()
             assert_that(conduit, is_(instance_of(SocketConduit)))
             assert_that(conduit.target, is_(socket.socket.return_value))
             socket.socket.assert_called_once_with(*sock_args)

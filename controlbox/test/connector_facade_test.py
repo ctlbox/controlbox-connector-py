@@ -5,7 +5,7 @@ from unittest.mock import Mock, MagicMock
 from hamcrest import assert_that, equal_to, is_not, is_, empty, instance_of
 
 from controlbox.connector.base import Connector, ConnectorError
-from controlbox.connector_facade import ControllerConnectionManager, ManagedConnection
+from controlbox.connector_discovery_facade import ControllerConnectionManager, ManagedConnection
 
 
 class ManagedConnectionTest(TestCase):
