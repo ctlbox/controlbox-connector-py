@@ -10,7 +10,7 @@ Commands available:
 
 from setuptools import setup, Command
 
-import os, sys
+import os
 
 
 class RunInRootCommand(Command):
@@ -53,10 +53,10 @@ setup(
     author_email='',
     license='LGPL',
     packages=['controlbox', 'controlbox.conduit', 'controlbox.config', 'controlbox.connector',
-            'controlbox.protocol', 'controlbox.support'],
+                'controlbox.protocol', 'controlbox.support'],
     zip_safe=False,
     cmdclass={
-      'apidoc': ApiDocCommand,
-      'autobuild': AutoBuildCommand
+        'apidoc': ApiDocCommand,
+        'autobuild': AutoBuildCommand
     }
 )
