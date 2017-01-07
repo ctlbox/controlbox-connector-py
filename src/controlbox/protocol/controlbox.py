@@ -136,9 +136,12 @@ class Commands(object):
 # FutureRequest.)
 
 class ResponseDecoder(object):
-    """Parses and decodes the response data.
+    """Parses and decodes the response data from a stream, into
+    logical components. For example, chain-ids are turned into a python list,
+    and the individual fields of the response as defined in the protocol spec are
+    decoded from the continuous stream as separate values.
 
-    The buffer includes the request data,
+    The stream includes the request data,
     which is parsed into the corresponding objects matching the original request
     and decodes the data block that is the additional response data.
     """

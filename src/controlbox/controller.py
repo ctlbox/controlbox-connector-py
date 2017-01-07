@@ -7,21 +7,15 @@ It is stateful.  For a stateless equivalent, see events.py and ControlboxEvents.
 """
 from abc import abstractmethod
 
+from controlbox.adapter import Controlbox, FailedOperationError, ProfileNotActiveError
 from controlbox.protocol.async import FutureResponse
-from controlbox.protocol.controlbox import ControlboxProtocolV1, unsigned_byte, signed_byte
-from controlbox.support.mixins import CommonEqualityMixin
+from controlbox.protocol.controlbox import signed_byte, unsigned_byte
 from controlbox.support.events import EventSource
+from controlbox.support.mixins import CommonEqualityMixin
 
 
 timeout = 10  # long enough to allow debugging, but not infinite so that build processes will eventually terminate
-
-
-class FailedOperationError(Exception):
-    """The requested controlbox operation could not be performed."""
-
-
-class ProfileNotActiveError(FailedOperationError):
-    """raised when an operation that requires an active profile is attempted, and no profile is currently active."""
+# todo - get rid of the timeout or make it part of the constructor
 
 
 class BaseControlboxObject(CommonEqualityMixin, EventSource):
@@ -130,19 +124,6 @@ class ContainerTraits:
         Retrieve the root container from this container.
         """
         raise NotImplementedError
-
-
-class Controlbox:
-    """
-    The base interface for maintaining a connection to a controlbox instance.
-    It provides access to the protocol.
-    """
-    def __init__(self, connector: ControlboxProtocolV1):
-        self._connector = connector
-
-    @property
-    def protocol(self) -> ControlboxProtocolV1:  # short-hand and type hint
-        return self._connector.protocol
 
 
 class TypedObject:
@@ -1155,7 +1136,7 @@ class TypedControlbox(Controlbox):
             container.id_chain_for(slot), optional=True)
         slot = slot if slot is not None else self.next_slot(container)
         data = (args is not None and obj_class.encode_definition(args)) or None
-        dec = args and obj_class.decode_definition(data, controller=self)
+        dec = args and obj_class._decode_definition(data, controller=self)
         if dec != args:
             raise ValueError(
                 "encode/decode mismatch for value %s, encoding %s, decoding %s" % (args, data, dec))

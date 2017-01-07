@@ -51,8 +51,16 @@ class FutureValue(Future):
         """
         return value
 
+    def set_result_or_exception(self, value):
+        """sets the result,"""
+        if isinstance(value, BaseException):
+            self.set_exception(value)
+        else:
+            self.set_result(value)
+
     def value(self, timeout=None):
         """ allows the provider to set the result value but provide a different (derived) value to callers. """
+        # todo - the base future class handles exceptions as results, so this can be factored out
         value = self._value_extractor(self.result(timeout))
         if isinstance(value, BaseException):
             raise value
@@ -303,7 +311,7 @@ class BaseAsyncProtocolHandler:
         self._unmatched.remove(fn)
 
     def async_request(self, request: Request) -> FutureResponse:
-        """ Asynchronously sends a request request to the conduit.
+        """ Asynchronously sends a request to the conduit.
         :param request: The request to send.
         :return: A FutureResponse where the corresponding response to the request can be retrieved when it arrives.
         """

@@ -15,93 +15,194 @@ defined before installing sphinx-autodoc.
 
 ## Architecture
 
-The connector provides proxy objects that correspond to
-objects running inside an embedded container.
+The controlbox connector provides a stack of interfaces at different levels
+for communicating with objects running inside a controlbox container.
+
+The application object (both in the controller and the remote proxy) are considered
+the highest level
+
+The next layer is the controlbox wrapper that provides the controlbox interface
+to that object. This covers creating new instances (with a given configuration),
+and reading/writing object state.
+
+The controlbox framework uses all the registered controlbox wrappers to manage profiles,
+and within each profile the objects that have been created.
 
 Controller (Typically embedded, C++):
 
- - application object (stateful)
- - controlbox object (stateful - maybe the same instance as the app object)
- - protocol driver (encodes to the protocol format/decodes from protocol format.)
- - protocol bytes to wire format
- - Conduit - send/receive bytes
+ - application API (not touched by controlbox)
+ - application classes/objects (stateful)
+ - controlbox adapter (may be the same instance as the app object, stateful or stateless)
+ - controlbox framework - manages the controlbox objects, persistence, performs commands
+   as instructed by the protocol
+ - wire protocol: data bytes to wire format and message chunking
+ - Conduit - send/receive raw bytes to an endpoint
 
      ↑   |
-     |   |
-     |   |   (serial/TCP/stdIO...)
+     |   |   Conduit
+     |   |   (serial/TCP/stdio...)
      |   |
      |   ↓
 
- - Conduit - send/receive bytes
-
  Connector (this repo, python):
 
-  - wire format to bytes
-  - protocol driver
-  - controlbox bridge (stateless)
-  - application proxy object (stateful) - [optional]
+ - Conduit - send/receive bytes
+ - Wire protocol: wire format to data bytes and message chunking
+ - asynchronous protocol: encodes/decodes controlbox commands/results to/from the wire
+ - controlbox adapter - encodes/decodes application types
+ - application proxy object (stateful) - [optional] an OO API to the application adapter
+ - application API (all application functionality, no controlbox exposure)
 
+## In the Controller
+
+This is the endpoint where controlbox is implemented. Currently
+controlbox is available as a C++ framework, but no reason it cannot be ported to other
+languages.
 
 ### Application Object
 
-This is a regular object owned and coded by the application developer. It implements the application
-functionality. The application functionality can be contained within this object, or any other objects
-that this object instantiates.
+This is a regular object owned and coded by the application developer in C/C++.
+It implements the application functionality. The application functionality can be contained within this object,
+or any other objects that this object instantiates.
 
-### Controlbox Object
+### Controlbox Adapter
 
-The controlbox object is responsible for:
+The controlbox adapter is responsible for:
 
 - instantiating and configuring the application object from the object definition
 - encoding object state to a byte stream when `read()` is called
 - decoding the byte stream and updating the object state when `write()` is called.
 - performing the necessary action when `udpate()` is called, such as invoking an application method.
 
-The controlbox object can use any strategy as desired for obtaining and configuring the application object:
+The controlbox adapter can use any strategy as desired for obtaining and configuring the application object:
 
-- controlbox object and application object are one and the same class, performing both functions
-- controlbox object is a subclass of the application object
-- controlbox object composes the application object directly as a member
-- controlbox object instantiates the application object and holds a pointer to it
-- controlbox object fetches the application object from a pool
+- controlbox adapter and application object are one and the same class, performing both functions
+- controlbox adapter is a subclass of the application object
+- controlbox adapter composes the application object directly as a member
+- controlbox adapter instantiates the application object and holds a pointer to it
+- controlbox adapter fetches the application object from a pool
 - ...etc...
 
 
-### Protocol Driver
+### Controlbox Framework
 
-This class is responsible for framing commands and data to be sent and reading framed commands
-and data from the data stream.
+This layer is responsible for framing responses and data to be sent and reading framed commands
+and data from the data stream and co-ordinating execution
+of the requested command.
 
 ### Bytes <> Wire format
 
 The data bytes making up the command + data are converted to the on-wire format.
+The wire format is plain text, with each byte encoded as a hex pair, and optional annotations
+encoded between square brackets.
 
 ### Conduit
 
 This is a bi-directional stream of bytes, such as a serial port, TCP socket, stdio.
-Data written by the controller is read by the connector, and vice versa.
+Data written by one end of the conduit is read by the other, and vice versa.
 
 ### Connector Wire <> Bytes format
 
 Converts between the wire format and octets that make up the encoded commands and data.
+This ignores annotations, and converts the hex pairs to single octets.
 
-### Connector Protocol Driver
+### Controlbox Protocol
 
-Implements an asynchronous protocol manager. It pairs requests with responses,
+Implements an asynchronous protocol driver. It pairs requests with responses,
 and handles unsolicited responses from the controller.
 
-When a method on the protocol object is called it is converted to a stream of data bytes and sent over the conduit.
+When a method on the protocol object is called it is converted to a stream of data bytes and sent to the wire (which is
+then further encoded to the wire format).
+
 When the result is received it is decoded and converted to a value that is the result of the command.
+
+It provides a low-level python interface that describes the controlbox protocol. Methods such as
+`create_object` map directly to the protocol with only minimal encoding to make the syntax more convenient.
+
+For example, `create object` has these parameters:
+- the object ID chain (an iterable of numbers - this is converted to the chain-id list encoding in controlbox where the
+   bit 7 is used to indicate if there is another item in the chain),
+- the object type (a number)
+- object configuration block (a byte array).
+
+Application-specific types and instances do not feature at this level.
+
 
 ### Controlbox codec object
 
-The controlbox codec object parallels the controlbox object in the controller.
-It is responsible for interfacing between the protocol data and application objects. It
-knows how to decode the data blocks send from the controller to application objects/properties.
+The controlbox codec object parallels the controlbox adapter in the controller.
+It is responsible for interfacing between the controlbox representation (byte arrays) and application types. It
+knows how to decode the data blocks that represent object state and configuration to application objects/properties.
 
-### Application Proxy Object
+### Controlbox Statless API
 
-This exposes the state and convenience operations that change state for application objects.
+This provides an application-centric view of controlbox operations.
+This raises the level of the python interface from byte buffers representing encoded object state
+to python values that are meaningful to the application.
+It uses the codecs to convert between application state and the encoded format.
+
+The application state is lightweight in the sense that a value representing
+object state or construction configuration does not have any form of reference to the remote
+controlbox object. For example, reading the current time only returns the time. That value has no
+connection to the time object on the controller, and only represents the state - the current time.
+
+All commands to the controller are asynchronous and return a Future. The command can be made synchronous by calling `result(timeout=None)`
+on the returned Future.
+
+The application can add event listeners for events which are fired for all responses
+received from the controller.
+
+### Controlbox Stateful API
+
+This builds on the exposes API, exposing the state and convenience operations that change state for application objects.
+Rather than returning lightweight statless objets, the objects function like proxies. They have
+methods that can directly interact with the controller, such as reading and writing state. It's an
+object-oriented application API.
+
+Each object maintains a reference to the remote object by maintaining the controlbox connector, the
+id chain and the object type.
+
+The API builds on the lightweight API, and binds the state for a given remote
+object with a proxy that maintains the location of that object. Given a proxy object, the current
+value is available via:
+
+```
+  proxy.value
+```
+
+And the latest value can be fetched via
+
+```
+    future = proxy.update
+    future.value
+```
+
+Application specific methods may also be provided on the object,
+
+```
+    onewire = ...
+    onewire.search_bus()
+```
+
+The application object can add additional functionality. For example,
+the onewire bus could post device_added/removed events as it detects devices
+coming and going on the bus.
+
+
+## Application API
+
+The top-level API provided by the application is decided by the application designer.
+It may abstract all the controlbox details, providing an API that is application-centric,
+and where controlbox is an implementation detail. The application
+decides how controlbox concepts such as object IDs and types map to
+application object location and type.
+
+If the final interface is external to the process, such as a REST API
+or a CLI, then the stateless API is probably simplest to use.
+
+If the interface provides application objects for long running processes, then the
+stateful API is most useful.
+
 
 
 ## Container Hierarchy
@@ -138,9 +239,6 @@ The request may require a mask to be set if only some of the state is updated.
 When the client enumerates objects in a proxy container, what is returned - the controlbox object or the application object?
 Probably makes sense to return the applicatino object. If the proxy is required, the container can provide
 that on request (or it's added dynamically to the application object.)
-
-
-serivce layer is source of truth
 
 Contstructing
  - application fires an object created events which represents the object and the construction parameters
