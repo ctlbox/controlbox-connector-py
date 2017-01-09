@@ -5,7 +5,8 @@ from io import BytesIO
 from hamcrest import assert_that, is_, equal_to, not_
 
 from controlbox.conduit.base import DefaultConduit
-from controlbox.protocol.controlbox import ControlboxProtocolV1, build_chunked_hexencoded_conduit, ResponseDecoder
+from controlbox.protocol.controlbox import ControlboxProtocolV1, build_chunked_hexencoded_conduit, ResponseDecoder, \
+    ResponseDecoderSupport
 from controlbox.protocol.io import RWCacheBuffer, CaptureBufferedReader
 
 
@@ -61,15 +62,15 @@ class BrewpiV030ProtocolDecodeResponseTestCase(unittest.TestCase):
 
     def test_send_read_command_bytes(self):
         future = self.sut.read_value([1, 2, 3], 0x23)
-        # emulate a on-wire response
-        self.push_response([1, 0x81, 0x82, 3, 0x23, 0, 2, 4, 5])
-        assert_future(future, is_(equal_to((bytes([4, 5]),))))
+        # emulate an on-wire response
+        self.push_response([1, 0x81, 0x82, 3, 0x23, 0, 0x24, 2, 4, 5])
+        assert_future(future, is_(equal_to((0x24, bytes([4, 5])))))
 
     def test_resposne_must_match(self):
         """ The command ID is the same but the request data is different. So this doesn't match up with the previous.
             Request. """
         future = self.sut.read_value([1, 2, 3], 23)
-        self.push_response([1, 0x81, 0x82, 0, 23, 4, 2, 4, 5])
+        self.push_response([1, 0x81, 0x82, 0, 23, 0, 4, 2, 4, 5])
         assert_that(future.done(), is_(False))
 
     def test_multiple_outstanding_requests(self):
@@ -79,12 +80,12 @@ class BrewpiV030ProtocolDecodeResponseTestCase(unittest.TestCase):
         future2 = self.sut.read_value([1, 2, 4], type_id)
 
         # push all the data, to be sure that
-        self.push_response([1, 0x81, 0x82, 4, type_id, 0, 2, 2, 3])         # matches request 2
-        assert_future(future2, is_(equal_to((bytes([2, 3]),))))
+        self.push_response([1, 0x81, 0x82, 4, type_id, 0, type_id, 2, 2, 3])         # matches request 2
+        assert_future(future2, is_(equal_to((type_id, bytes([2, 3])))))
         assert_that(future1.done(), is_(False))
-        self.push_response([1, 0x81, 0x82, 3, type_id, 0, 3, 4, 5, 6]
+        self.push_response([1, 0x81, 0x82, 3, type_id, 0, type_id, 3, 4, 5, 6]
                            )      # matches request 1
-        assert_future(future1, is_(equal_to((bytes([4, 5, 6]),))))
+        assert_future(future1, is_(equal_to((type_id, bytes([4, 5, 6])))))
 
     def push_response(self, data):
         self.input_buffer.writer.write(bytes(data))
@@ -118,8 +119,8 @@ class BrewpiV030ProtocolHexEncodingTestCase(unittest.TestCase):
     def test_full_read_command_bytes(self):
         future = self.sut.read_value([1, 2, 3], 0x23)
         # emulate the response
-        self.push_response(b'01 81 82 03 23 00 01 aB CD \n')
-        assert_future(future, is_(equal_to((bytes([0xAB]),))))
+        self.push_response(b'01 81 82 03 23 00 24 01 aB CD \n')
+        assert_future(future, is_(equal_to((0x24, bytes([0xAB])))))
 
     def push_response(self, data):
         self.input_buffer.writer.write(bytes(data))
@@ -133,10 +134,6 @@ class BrewpiV030ProtocolHexEncodingTestCase(unittest.TestCase):
 
 class ResponseDecoderTest(unittest.TestCase):
 
-    def test__parse_request_is_abstract(self):
-        sut = ResponseDecoder()
-        self.assertRaises(NotImplementedError, sut._parse_request, [])
-
     def test_read_chain_empty(self):
         self.assertEqual(bytearray(), self.chain_decode(bytes()))
 
@@ -147,7 +144,7 @@ class ResponseDecoderTest(unittest.TestCase):
         self.assertEqual(bytearray([0x10, 0x20, 0x30]), self.chain_decode(bytes([0x90, 0xA0, 0x30])))
 
     def chain_decode(self, buffer):
-        sut = ResponseDecoder()
+        sut = ResponseDecoderSupport()
         return sut._read_chain(CaptureBufferedReader(BufferedReader(BytesIO(buffer))))
 
 

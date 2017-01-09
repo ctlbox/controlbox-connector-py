@@ -82,7 +82,8 @@ class ConduitStreamDecoratorTest(unittest.TestCase):
         sut._wrap_input.assert_called_once_with(io)
         sut._wrap_input.reset_mock()
 
-        # method not called a second time
+        # method not called a second time because the value is cached
+        sut._wrap_input.reset_mock()
         assert_that(sut.input, is_(io2))
         sut._wrap_input.assert_not_called()
 
@@ -96,7 +97,8 @@ class ConduitStreamDecoratorTest(unittest.TestCase):
         assert_that(sut.output, is_(io2))
         sut._wrap_output.assert_called_once_with(io)
 
-        # method not called a second time
+        # method not called a second time because the value is cached
+        sut._wrap_output.reset_mock()
         assert_that(sut.output, is_(io2))
         sut._wrap_output.assert_not_called()
 
@@ -171,7 +173,7 @@ class DefaultConduitTest(unittest.TestCase):
         write.close = Mock()
         sut.close()
         read.close.assert_called_once()
-        write.close.assert_called_one()
+        write.close.assert_called_once()
 
 
 class ConduitFactoryTest(unittest.TestCase):

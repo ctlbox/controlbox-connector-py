@@ -291,13 +291,17 @@ class ProtocolConnector(AbstractDelegateConnector):
     The protocol is available as the `protocol` property. The ProtocolConnector is set
     on the protocol as the connector attribute.
     """
-    def __init__(self, delegate, protocol_sniffer):
+    def __init__(self, delegate: Connector, protocol_sniffer):
+        """
+        :param delegate: The connector to delegate to (this provides the conduit over which the protocol is carried)
+        :param protocol_sniffer: a function, that on given the conduit, determines the protocol to use.
+        """
         super().__init__(delegate)
         self._sniffer = protocol_sniffer
         self._protocol = None
 
     def _connect(self)->Conduit:
-        result = super()._connect()
+        result: Conduit = super()._connect()
         try:
             self._protocol = self._sniffer(result)
             if self._protocol is None:
@@ -307,8 +311,9 @@ class ProtocolConnector(AbstractDelegateConnector):
         except UnknownProtocolError as e:
             raise ConnectorError() from e
         finally:  # cleanup connection on protocol error
-            if not self._protocol:  # pragma no cover - seems to be a bug in coverage? both paths are taken
-                self.disconnect()
+            if self._protocol is None:
+                result.close()
+                self._disconnect()
         return result
 
     def _connected(self):

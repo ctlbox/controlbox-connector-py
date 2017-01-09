@@ -356,38 +356,43 @@ class ProtocolConnectorTest(unittest.TestCase):
         sut.connect()
         delegate.connect.assert_not_called()
 
-    def test_connect(self):
+    def test_connect_sniffed_protocol(self):
         self.connect_protocol(Mock(return_value=Mock()), False)
 
-    def test_connect_none(self):
+    def test_connect_sniffed_none(self):
         self.connect_protocol(Mock(return_value=None), True)
 
     def test_connect_unknown_protocol(self):
         self.connect_protocol(Mock(side_effect=UnknownProtocolError), True)
 
     def connect_protocol(self, sniffer, protocol_except):
-        delegate = Mock()
-        delegate.conduit = Mock()
-        delegate.disconect = Mock()
+        """
+        test protocol connection
+        :param sniffer:
+        :param protocol_except:
+        :return:
+        """
+        connector = Mock()               # the delegate connector
+        connector.conduit = Mock()
+        connector.disconnect = Mock()
 
         def connected():
-            delegate.connected = True
+            connector.connected = True
 
-        delegate.connect = Mock(side_effect=connected)
-        sut = ProtocolConnector(delegate, sniffer)
+        connector.connect = Mock(side_effect=connected)
+        sut = ProtocolConnector(connector, sniffer)
         if protocol_except:
             assert_that(calling(sut.connect), raises(ConnectorError))
-            delegate.disconnect.assert_called_once()
+            connector.disconnect.assert_called_once()
             assert_that(sut.connected, is_(False))
         else:
             sut.connect()
-            delegate.disconnect.assert_not_called()
+            connector.disconnect.assert_not_called()
+            connector.connect.assert_called_once()
             assert_that(sut.connected, is_(True))
             assert_that(sut.protocol, is_(sniffer.return_value))
             assert_that(sniffer.return_value.connector, is_(sut))
-
-        delegate.connect.assert_not_called()
-        sniffer.assert_called_with(delegate.conduit)
+        sniffer.assert_called_with(connector.conduit)
 
     def test_disconnect_protocol(self):
         self.disconnect(with_shutdown=False)
@@ -418,6 +423,6 @@ class ProtocolConnectorTest(unittest.TestCase):
         # then
         assert_that(sut.protocol, is_(None))
         delegate.disconnect.assert_called_once()
-        conduit.assert_called_once()
+        conduit.close.assert_called_once()
         if with_shutdown:
             protocol.shutdown.assert_called_once()

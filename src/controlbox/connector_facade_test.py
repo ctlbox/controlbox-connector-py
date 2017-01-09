@@ -68,7 +68,7 @@ class ManagedConnectionTest(TestCase):
         events = Mock()
         sut = ManagedConnection(object(), connector, 5, events)
         sut._close()
-        connector.disconnected.assert_called_once()
+        connector.disconnect.assert_called_once()
 
     def test_close_disconnected(self):
         connector = Mock()
@@ -107,12 +107,14 @@ class ControllerConnectionManagerTest(TestCase):
         sut.connected("res", connector)
         # then
         listener.assert_not_called()
+        mc.start.assert_called_once()
+        mc.start.reset_mock()
         assert_that(sut.connections.get("res"), is_(mc))
         # reconnecting to the same doesn't create a new manager
         sut._new_managed_connection.reset_mock()
         sut.connected("res", connector)
         sut._new_managed_connection.assert_not_called()
-        mc.start.assert_called_once()
+        mc.start.assert_not_called()
 
     def test_new_managed_connection(self):
         sut = ControllerConnectionManager(20)
@@ -133,9 +135,9 @@ class ControllerConnectionManagerTest(TestCase):
     def test_disconnected(self):
         listener = Mock()
         sut = ControllerConnectionManager()
-        sut.events += listener
+        sut.events += listener      # add the event listener
         connection = Mock()
-        connection.close = Mock()
+        connection.stop = Mock()
         sut._connections["res"] = connection
         # when
         sut.disconnected("res")
@@ -143,7 +145,7 @@ class ControllerConnectionManagerTest(TestCase):
         # listener is not called by the manager - it's invoked by the ManagedConnection object
         listener.assert_not_called()
         assert_that(sut.connections, is_(empty()))
-        connection.close.assert_called_once()
+        connection.stop.assert_called_once()
 
     def test_disconnected_not_known(self):
         sut = ControllerConnectionManager()
