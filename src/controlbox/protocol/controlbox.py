@@ -129,13 +129,39 @@ class Commands(object):
     async_log_values = async_flag | log_values
 
 
+class CommandErrors:
+    no_error = 0
+    unknown_error = -1
+    stream_error = -2
+    profile_not_active = -3
+
+    insufficient_persistent_storage = -16
+    insufficient_heap = -17
+
+    object_not_writable = -32
+    object_not_readable = -33
+    object_not_creatable = -34
+    object_not_deletable = -35
+    object_not_container = -36
+    object_not_open_container = -37
+    container_full = -38
+
+    invalid_parameter = -64
+    invalid_object_id = -65
+    invalid_type = -66
+    invalid_size = -67
+    invalid_profile = -68
+    invalid_id = -69
+
+
 # A note to maintainers: These ResponseDecoder objects have to be written carefully - the
 # _parse and _parse_response methods have to match exactly the command request and command response
+# from the controlbox protocol.
 # If _parse doesn't consume the right amount of bytes, the response will not be matched up with the
 # corresponding request, and the caller will never get a response (and will eventually timeout on the
 # FutureRequest.)
 
-class ResponseDecoder(object):
+class ResponseDecoder(object,metaclass=ABCMeta):
     """Parses and decodes the response data from a stream, into
     logical components. For example, chain-ids are turned into a python list,
     and the individual fields of the response as defined in the protocol spec are
