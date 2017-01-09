@@ -153,6 +153,9 @@ class ObjectStateEvent(ObjectEvent):
         self.type = type
         self.state = state
 
+    def apply(self, visitor: 'ControlboxEventVisitor'):
+        return visitor.system_object_state(self) if self.system else visitor.object_state(self)
+
 
 class ProfileEvent(ControlboxApplicationEvent):
     def __init__(self, connector, profile_id):
@@ -486,12 +489,12 @@ class ReadValueEventFactory(ControlboxEventFactory):
 
     def __call__(self, connector: 'ControlboxApplicationAdapter', response, request, command_id, command):
         id_chain, type, data_length = request
-        buffer, = response
+        status, buffer = response
 
-        value = connector._decode_state(type, buffer) if len(buffer) else None
+        value = connector._decode_state(status, buffer) if len(buffer) else None
         event = ObjectUpdatedEvent(connector, self.system, id_chain, type, value)
         if value is None:
-            event = CommandFailedEvent(connector, command, response, event)
+            event = CommandFailedEvent(connector, command, status, event)
         return event
 
 
@@ -500,12 +503,13 @@ class WriteValueEventFactory(ControlboxEventFactory):
 
     def __call__(self, connector: 'ControlboxApplicationAdapter', response, request, command_id, command):
         id_chain, type, data = request
-        buffer, = response
-        requested_value = connector._decode_state(type, buffer)
+        status, buffer = response
+
+        requested_value = connector._decode_state(status, buffer) if status > 0 else None
         set_value = connector._decode_state(type, buffer) if len(buffer) else None
         event = ObjectUpdatedEvent(connector, False, id_chain, type, set_value, requested_value)
         if set_value is None:
-            event = CommandFailedEvent(connector, command, response, event)
+            event = CommandFailedEvent(connector, command, status, event)
         return event
 
 
@@ -518,7 +522,7 @@ class CreateObjectEventFactory(ControlboxEventFactory):
         value = command[1][2]
         event = ObjectCreatedEvent(connector, id_chain, type, value)
         if status_code < 0:
-            event = CommandFailedEvent(connector, command, response, event)
+            event = CommandFailedEvent(connector, command, status_code, event)
         return event
 
 
@@ -539,10 +543,12 @@ class ListProfileEventFactory(ControlboxEventFactory):
 
     def __call__(self, connector: 'ControlboxApplicationAdapter', response, request, command_id, command):
         profile_id, = request
-        definitions, = response
+        status, definitions = response
         system = profile_id == -1
         object_defs = [connector._decode_definition(system, x) for x in definitions]
         event = ProfileListedEvent(connector, profile_id, object_defs)
+        if status < 0:
+            event = CommandFailedEvent(connector, command, status, event)
         return event
 
 
@@ -776,10 +782,12 @@ class ControlboxApplicationAdapter:
         event = self._event_response(response, command)
         if event is not None:
             result = self._event_result(event)
-            wrapper.set_result_or_exception(result)
+            if wrapper:
+                wrapper.set_result_or_exception(result)
             self.listeners.fire(event)
         else:
-            wrapper.set_result(None)
+            if wrapper:
+                wrapper.set_result(None)
 
     def _event_result(self, event: ControlboxApplicationEvent):
         return event.apply(self.event_result_visitor)

@@ -145,7 +145,7 @@ class AsyncLoopTest(unittest.TestCase):
 
         sut = AsyncLoop(stop)
         sut.start()
-        while (sut.background_thread):
+        while (sut.background_thread):  # pragma no cover - non-deterministic
             pass
         sut.stop()
 

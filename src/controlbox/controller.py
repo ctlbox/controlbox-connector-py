@@ -9,7 +9,7 @@ from abc import abstractmethod
 
 from controlbox.adapter import Controlbox, FailedOperationError, ProfileNotActiveError
 from controlbox.protocol.async import FutureResponse
-from controlbox.protocol.controlbox import signed_byte, unsigned_byte
+from controlbox.protocol.controlbox import signed_byte, unsigned_byte, longDecode
 from controlbox.support.events import EventSource
 from controlbox.support.mixins import CommonEqualityMixin
 
@@ -670,8 +670,7 @@ class UnsignedLongEncoder(LongEncoder):
 class LongDecoder(ValueDecoder):
 
     def _decode(self, buf):
-        """ decodes a little-endian encoded 4 byte value. """
-        return ((((signed_byte(buf[3]) * 256) + buf[2]) * 256) + buf[1]) * 256 + buf[0]
+        return longDecode(buf)
 
     def encoded_len(self):
         return 4

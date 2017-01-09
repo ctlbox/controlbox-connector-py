@@ -71,6 +71,7 @@ class HexToBinaryInputStream(IOBase):
         return result
 
     def peek_next_byte(self):
+        """ retrieves the next unsigned byte, or negative value if there is no more data. """
         if not self.has_next():
             return -1
         return self._decode_next_byte()

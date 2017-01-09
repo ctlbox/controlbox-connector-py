@@ -301,7 +301,7 @@ class ProtocolConnector(AbstractDelegateConnector):
         self._protocol = None
 
     def _connect(self)->Conduit:
-        result: Conduit = super()._connect()
+        result = super()._connect()   # type: Conduit
         try:
             self._protocol = self._sniffer(result)
             if self._protocol is None:

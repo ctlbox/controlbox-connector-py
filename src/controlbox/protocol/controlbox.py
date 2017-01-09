@@ -1,8 +1,23 @@
 """
 Provides an implementation of the controlbox protocol via the class ControlboxProtocolV1.
+
+The protocol implementation provides these features:
+- exposes the controlbox protocol in a python-esque way, mapping elements of the protocol
+    to a natural python reprsentation.  E.g. an ID chain is a tuple/list.
+- it takes care of the low-level encoding - e.g. an ID chain is encoded by setting
+    bit 7 of each value bar the last. Calliers can just specify the logical values
+    in the ID chain and not worry about the protocol encoding.
+- encodes requests: combines the individual components of a command request into the single
+  stream ready for sending
+- decodes responses: the stream data for the response is parsed and split up into the constituent entities, such as
+    command-id, id-chain, object type, buffer and masked etc..
+- is asynchronous: requests are sent asynchronously, with the result of the request available as a future
+- takes care of pairing responses with the originating request
+- unsolicited responses (responses without an originating request) are supported
+
 """
 
-from abc import abstractmethod
+from abc import abstractmethod, ABCMeta
 from io import BufferedIOBase
 
 from controlbox.conduit.base import Conduit, ConduitStreamDecorator
@@ -10,6 +25,11 @@ from controlbox.protocol.async import BaseAsyncProtocolHandler, FutureResponse, 
 from controlbox.protocol.hexstream import BinaryToHexOutputStream, ChunkedHexTextInputStream, HexToBinaryInputStream
 from controlbox.protocol.io import CaptureBufferedReader
 from controlbox.support.events import EventSource
+
+
+def longDecode(buf):
+    """ decodes a little-endian encoded 4 byte value. """
+    return ((((signed_byte(buf[3]) * 256) + buf[2]) * 256) + buf[1]) * 256 + buf[0]
 
 
 def unsigned_byte(val):
@@ -88,6 +108,7 @@ class ByteArrayRequest(Request):
     The byte array defines the key for the request, since responses
     always repeat the request data verbatim.
     """
+
     def __init__(self, data: bytes):
         self.data = data
 
@@ -161,7 +182,7 @@ class CommandErrors:
 # corresponding request, and the caller will never get a response (and will eventually timeout on the
 # FutureRequest.)
 
-class ResponseDecoder(object,metaclass=ABCMeta):
+class ResponseDecoder(object, metaclass=ABCMeta):
     """Parses and decodes the response data from a stream, into
     logical components. For example, chain-ids are turned into a python list,
     and the individual fields of the response as defined in the protocol spec are
@@ -185,20 +206,19 @@ class ResponseDecoder(object,metaclass=ABCMeta):
         return capture.as_bytes(), structure  # return the bytes read from the stream so far.
 
     @abstractmethod
-    def _parse_request(self, buf):
+    def _parse_request(self, buf):  # pragma no cover
         """Parse the buffer so that the content is validated, streamed and the semantic parts decoded/separated."""
         raise NotImplementedError
 
     def _read_chain(self, stream):
         """Read an id-chain from the stream.
 
-        If the stream has no data, the result is an empty bytearray. Otherwise the result is one or more bytes.
-        :param stream: A stream containing an optional byte < 128, prefixed by
+        :param stream: A stream containing a byte < 128, prefixed by
             one or more bytes >= 128.
         :return: a bytearray containing the id-chain
         """
         result = bytearray()
-        while self.has_data(stream):
+        while True:
             b = self._read_byte(stream)
             result.append(b & 0x7F)
             if b < 0x80:
@@ -208,11 +228,12 @@ class ResponseDecoder(object,metaclass=ABCMeta):
     def _read_id_chain(self, buf):
         return self._read_chain(buf)
 
-    def _read_type_chain(self, buf):
+    def _read_type(self, buf):
         # a type is a large integer value encoded as one or more bytes
         # for now we assume values < 255 (1 byte length)
-        # future schemes mwill use valus >= 128 as an escape code for larger values.
-        return self._read_chain(buf)[0]
+        # future schemes will use value 127 as an escape code for larger values.
+        # since the type id also doubles as a status code negative values cannot be used in the first byte
+        return self._read_signed_byte(buf)
 
     def _read_block(self, size, stream):
         buf = bytearray(size)
@@ -240,7 +261,11 @@ class ResponseDecoder(object,metaclass=ABCMeta):
         return signed_byte(b)
 
     @staticmethod
-    def _read_byte(stream):
+    def _insufficient_data():
+        return ValueError("no more data in stream.")
+
+    @staticmethod
+    def _read_byte(stream, must_exist=True):
         """Read the next byte from the stream.
 
         If there is no more data, an exception is thrown.
@@ -248,7 +273,10 @@ class ResponseDecoder(object,metaclass=ABCMeta):
         """
         b = stream.read(1)
         if not b:
-            raise ValueError("no more data in stream.")
+            if must_exist:
+                raise ResponseDecoder._insufficient_data()
+            else:
+                return b
         return b[0]
 
     def _read_status_code(self, stream):
@@ -256,41 +284,37 @@ class ResponseDecoder(object,metaclass=ABCMeta):
         return self._read_signed_byte(stream)
 
     def _read_object_defn(self, buf):
-        # the location to create the object
-        id_chain = self._read_id_chain(buf)
-        obj_type = self._read_byte(buf)  # the object_type of the object
-        # the object constructor data block
-        ctor_params = self._read_vardata(buf)
+        id_chain = self._read_id_chain(buf)  # the location to create the object
+        obj_type = self._read_type(buf)  # the object_type of the object
+        ctor_params = self._read_vardata(buf)  # the object constructor data block
         return id_chain, obj_type, ctor_params
-
-    def _read_object_value(self, buf):
-        # the location to create the object
-        id_chain = self._read_id_chain(buf)
-        # the object constructor data block
-        ctor_params = self._read_vardata(buf)
-        return id_chain, ctor_params
 
     def _read_remainder(self, stream):
         """Read the remaining bytes in the stream into a list."""
         values = []
-        while self.has_data(stream):
-            value = self._read_byte(stream)
-            values.append(value)
-        return values
+        while True:
+            value = stream.read(1)
+            if not value:
+                break
+            values.append(value[0])
+        return bytes(values)
 
-    def has_data(self, stream):
+    def _has_data(self, stream):
         return stream.peek_next_byte() >= 0
 
     def _must_have_next(self, stream, expected):
-        next = stream.read_next_byte()
+        next = self._read_byte(stream)
         if next != expected:
-            raise ValueError('expected %d but got %b' % expected, next)
+            raise self._data_mismatch(next, expected)
+
+    def _data_mismatch(self, actual, expected):
+        return ValueError('expected %d but got %d' % (expected, actual))
 
     def parse_response(self, stream):
         return self._parse_response(stream)
 
     @abstractmethod
-    def _parse_response(self, stream):
+    def _parse_response(self, stream):  # pragma no cover
         """Parse the stream response to an object.
 
         This is a template method to decode the command response. The value returned
@@ -299,35 +323,45 @@ class ResponseDecoder(object,metaclass=ABCMeta):
         raise NotImplementedError()
 
 
+class ResponseDecoderSupport(ResponseDecoder):  # pragma no cover
+    def _parse_request(self, buf):
+        pass
+
+    def _parse_response(self, stream):
+        pass
+
+
 class ReadValueResponseDecoder(ResponseDecoder):
     def _parse_request(self, buf):
         # read the id of the object to read
         id_chain = self._read_id_chain(buf)
-        object_type = self._read_type_chain(buf)
+        object_type = self._read_type(buf)
         data_length = self._read_byte(buf)  # length of data expected
         return id_chain, object_type, data_length
 
     def _parse_response(self, stream):
         """Return the read command response whch is a single variable length buffer. """
-        return self._read_vardata(stream),
+        object_type = self._read_type(stream)  # object object_type
+        return object_type, ([] if object_type < 0 else self._read_vardata(stream))
 
 
 class WriteValueResponseDecoder(ResponseDecoder):
     def _parse_request(self, buf):
         id_chain = self._read_id_chain(buf)  # id chain
-        object_type = self._read_type_chain(buf)  # object object_type
+        object_type = self._read_type(buf)  # object object_type
         to_write = self._read_vardata(buf)  # length and body of data to write
         return id_chain, object_type, to_write
 
     def _parse_response(self, stream):
         """Return the write command response, which is a single variable length buffer indicating the value written. """
-        return self._read_vardata(stream),
+        object_type = self._read_type(stream)  # object object_type
+        return object_type, ([] if object_type < 0 else self._read_vardata(stream))
 
 
 class WriteMaskedValueResponseDecoder(WriteValueResponseDecoder):
     def _parse_request(self, buf):
         id_chain = self._read_id_chain(buf)  # id chain
-        object_type = self._read_type_chain(buf)  # object object_type
+        object_type = self._read_type(buf)  # object object_type
         to_write = self._read_vardata(buf, 2)  # data is 2x longer since the data and the mask are encoded
         return id_chain, object_type, to_write
 
@@ -350,7 +384,7 @@ class CreateObjectResponseDecoder(ResponseDecoder):
 class DeleteObjectResponseDecoder(ResponseDecoder):
     def _parse_request(self, buf):
         id_chain = self._read_id_chain(buf),  # the location of the object to delete
-        object_type = self._read_type_chain(buf)
+        object_type = self._read_type(buf)
         return id_chain, object_type
 
     def _parse_response(self, stream):
@@ -363,15 +397,15 @@ class ListProfileResponseDecoder(ResponseDecoder):
         return self._read_signed_byte(buf),  # profile id
 
     def _parse_response(self, stream):
-        """Retrieve a tuple, first value is list of tuples (id, object_type, data)"""
-        # todo - more consistent if this returns a status code and then the object definitions
+        """Retrieve a tuple, first value is status code, 2nd is list of tuples (id, object_type, data)"""
         # so we can distinguish between an error and an empty profile.
+        status = self._read_status_code(stream)
         values = []
-        while self.has_data(stream):  # has more data
-            self._must_have_next(stream, Commands.create_object)
-            obj_defn = self._read_object_defn(stream)
-            values.append(obj_defn)
-        return values,
+        if status >= 0:
+            while self._read_byte(stream) == Commands.create_object:  # has more data
+                obj_defn = self._read_object_defn(stream)
+                values.append(obj_defn)
+        return status, values
 
 
 class NextFreeSlotResponseDecoder(ResponseDecoder):
@@ -451,14 +485,18 @@ class LogValuesResponseDecoder(ResponseDecoder):
         status = self._read_status_code(stream)
         values = []
         if status >= 0:
-            while self.has_data(stream):  # has more data
-                self._must_have_next(stream, Commands.read_value)
-                id_chain = self._read_id_chain(stream)
-                object_type = self._read_type_chain(stream)
-                obj_state = self._read_vardata(stream)
-                log = id_chain, object_type, obj_state
-                values.append(log)
+            values = self._read_values(stream)
         return status, values
+
+    def _read_values(self, stream):
+        values = []
+        while self._read_byte(stream) == Commands.read_value:  # has more data
+            id_chain = self._read_id_chain(stream)
+            object_type = self._read_type(stream)
+            obj_state = self._read_vardata(stream)
+            log = id_chain, object_type, obj_state
+            values.append(log)
+        return values
 
 
 class ReadSystemValueResponseDecoder(ReadValueResponseDecoder):
@@ -467,10 +505,6 @@ class ReadSystemValueResponseDecoder(ReadValueResponseDecoder):
 
 class WriteSystemValueResponseDecoder(WriteValueResponseDecoder):
     """Writing system values has the same format as writing user values."""
-
-
-class ListSystemValuesResponseDecoder(ListProfileResponseDecoder):
-    """Listing system values and listing user values (a profile) have the same format."""
 
 
 class AsyncLogValueDecoder(LogValuesResponseDecoder):
@@ -487,20 +521,21 @@ class AsyncLogValueDecoder(LogValuesResponseDecoder):
 
     def _parse_response(self, stream):
         id_chain = []
-        time = self._read_block(4, stream)
         # flags - indicate if there is a id chain
         flags = self._read_byte(stream)
-        if flags:
+        if flags & 1:
             id_chain = self._read_id_chain(stream)  # the id of the container
-        # following this is a sequence of id_chain, len, data[] until the end
-        # of stream
+        time = 0
         values = []
-        while self.has_data(stream):
-            log_id_chain = self._read_id_chain(stream)
-            log_obj_type = self._read_type_chain(stream)
-            log_data = self._read_vardata(stream)
-            values.append((log_id_chain, log_obj_type, log_data))
-        return time, id_chain, values
+        status = self._read_status_code(stream)
+        if status >= 0:
+            timeEnc = self._read_block(4, stream)
+            time = longDecode(timeEnc)
+
+            # following this is a sequence of id_chain, len, data[] until the end
+            # of stream
+            values = self._read_values(stream)
+        return flags, id_chain, status, time, values
 
 
 class ChunkedHexEncodedConduit(ConduitStreamDecorator):
@@ -606,6 +641,10 @@ class ControlboxProtocolV1(BaseAsyncProtocolHandler):
 
         The conduit is assumed to read/write binary data. This class doesn't concern itself with the
         low-level encoding, such as hex-coded bytes.
+
+        :param conduit:  The conduit that carries the protocol
+        :param next_chunk_input: function that is invoked to move the conduit to the next command (next input chunk)
+        :param next_cheunk_output: function that is called to mark the current command as complete and begin a new one.
         """
         super().__init__(conduit)
         self.input = conduit.input
@@ -620,7 +659,7 @@ class ControlboxProtocolV1(BaseAsyncProtocolHandler):
         """Retrieve the command ID from the resposne key is the original request data."""
         return response.response_key[0]
 
-    def handle_async_response(self, response: Response):
+    def handle_async_response(self, response: CommandResponse):
         """notify that a response has been received.
 
         Invoked when an unsolicited response is received.
@@ -667,7 +706,10 @@ class ControlboxProtocolV1(BaseAsyncProtocolHandler):
     def list_profiles(self) -> FutureResponse:
         return self._send_command(Commands.list_profiles)
 
-    def read_system_value(self, id_chain, object_type=0, expected_len=0):
+    def log_values(self, id_chain=tuple()) -> FutureResponse:
+        return self._send_command(Commands.log_values, 1 if id_chain else 0, encode_id(id_chain))
+
+    def read_system_value(self, id_chain, object_type=0, expected_len=0) -> FutureResponse:
         return self._send_command(Commands.read_system_value, encode_id(id_chain), encode_type_id(object_type),
                                   expected_len)
 
@@ -716,7 +758,7 @@ class ControlboxProtocolV1(BaseAsyncProtocolHandler):
         """notifies that a request has been sent. move the output onto the next chunk."""
         self.next_chunk_output()
 
-    def _decode_response(self) -> Response:
+    def _decode_response(self) -> CommandResponse:
         """Read the next response from the conduit. Blocks until data is available.
 
         The command response is decoded using the ResponseDecoder class for the specific command.
