@@ -1,6 +1,6 @@
 language: python
 install:
-- pip install tox==2.3.1
+- pip install tox-travis=0.7.2
 - pip install coveralls==1.1
 script: tox
 after_success: coveralls
