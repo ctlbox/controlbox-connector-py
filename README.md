@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/m-mcgowan/controlbox-connect-py.svg?branch=master)](https://travis-ci.org/m-mcgowan/controlbox-connect-py) [![Coverage Status](https://coveralls.io/repos/github/m-mcgowan/controlbox-connect-py/badge.svg?branch=develop)](https://coveralls.io/github/m-mcgowan/controlbox-connect-py?branch=develop)
+
 # controlbox-py
 API to the objects running in a controlbox microcontainer on an embedded device, implemented in Python.
 
