@@ -1,14 +1,9 @@
-
 language: python
-install: 
- - pip install tox==2.3.1
- - pip install coveralls==1.1
-
+install:
+- pip install tox==2.3.1
+- pip install coveralls==1.1
 script: tox
-
-after_success:
-    coveralls
-
+after_success: coveralls
 notifications:
   slack:
-    secure: n57a2wBCpnD1C0DCTWW20BCMsDV24ORkdyn4n3NoClMUi2ZxqkWABNr3rWCpURyEhGfNKtiPAKu6ShBn3JO00lO0NbR0z524JisP0fvbO7LKNTh/WmnvpHXpXjqbhmaJ0KiXPNk8oHkE6SRbIooH60mzMhKF8BNzCqVrCyUOsh8=
+    secure: 1QNIOM2MyEFLkvSlw6ATOxJsusgLfZ175XpkTD9UaZtqBa5xHoyhVa6xb3Wm1bMjvgFtAukINhmGC52Zt0k7t0eT7iuh43z0WTDQGie1ZzMJIpQErH8CTlIlUeL8FpdWL7wcfnI/5TrvbsqLw5HHxsvCr3TjmTpf/aAXklZ9m0REX21ndLHkWH2PxFCXQexvzPpeWSUh8bmNwxZyoRCnBTTZ+1QC/LRjwRmoxW6lE2Ydhk+tv7LU4UdhkL42YHglwJCtizEau0CBCsUJ6HWYtxI6ELVk7WhM86zq0afvgutxijE6ZACWIcVO0F8XXyei0qlCCJXUAfIXBvfOjhrq9/eHoy2jicfW1pINF8Wnensc7YSuqlzSkcLcxwM8owj2ibEH97ez7HbhbaiQGGKJxVf5CSGABUfkdg99OUqKTixnUF0s6dUTg2uuuS6ULwP062SHIk5AW4cgAxzCoxXS7BuyC2kMHxvDCZZCloe22F98j4P2sGdz3Ua6Ro90QftS+Qz7P5B8DBo7sgCum2squ8zc/Q3FaCz/hU1Y3b5LU5DzY5Uy6FOrrKsid/yZ4pJwe5z3wyQCxpjA7jP95I3zDcvq+fHIgomh56/jNWYEbEuEAgicS3lCawteDUpxIs7vgIhCHeahEQW+EBMwSaYHPBoQCQqEdDariKXJbcxl6vM=
