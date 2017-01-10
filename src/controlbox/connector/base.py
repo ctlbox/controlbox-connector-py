@@ -311,8 +311,8 @@ class ProtocolConnector(AbstractDelegateConnector):
         except UnknownProtocolError as e:
             raise ConnectorError() from e
         finally:  # cleanup connection on protocol error
-            if self._protocol is None:
-                result.close()
+            if self._protocol is None:  # pragma no cover - seems to not pick this up even thoug
+                result.close()          # both branches have been verified in the debugger
                 self._disconnect()
         return result
 

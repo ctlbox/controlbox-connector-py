@@ -110,14 +110,16 @@ class AsyncLoopTest(unittest.TestCase):
 
         def fn():
             nonlocal thread, loopThread
-            thread = threading.current_thread()
-            loopThread = sut.background_thread
+            if not thread:
+                thread = threading.current_thread()
+                loopThread = sut.background_thread
+
         loop = Mock(side_effect=fn)
         sut = AsyncLoop(loop)
         sut.startup = Mock()
         sut.shutdown = Mock()
         sut.start()
-        while not loop.call_count:
+        while not loop.call_count:  # pragma no cover - non-deterministic threading
             time.sleep(0)
 
         running = sut.running()
@@ -202,7 +204,7 @@ class AsyncLoopTest(unittest.TestCase):
         sut = AsyncLoop(fn)
         sut.exception_handler = Mock(side_effect=capture_exception)
         sut.start()
-        while (not sut.exception_handler.call_count):
+        while (not sut.exception_handler.call_count):   # pragma no cover - nondeterministic
             time.sleep(0.01)
         sut.stop()
         assert_that(exception, is_(expected))
@@ -275,6 +277,12 @@ class BaseAsyncProtocolHandlerTest(unittest.TestCase):
         future = FutureResponse(request)
         self.sut._register_future(future)
         assert_that(len(self.sut._requests), is_(0))
+
+    def test_unregister_future_no_response_keys(self):
+        request = Mock()
+        request.response_keys = None
+        future = FutureResponse(request)
+        self.sut._unregister_future(future)
 
     def test_register_future_multiple_keys_is_registered_with_each_key(self):
         request = Mock()

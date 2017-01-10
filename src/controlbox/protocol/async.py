@@ -198,7 +198,7 @@ class AsyncLoop:
         """
         self.fn = fn
         self.args = args
-        self.stop_event = None   # condition variable that signifies the background thread should stop
+        self.stop_event = threading.Event()
         self.background_thread = None
         self.logger = log
 
@@ -210,7 +210,6 @@ class AsyncLoop:
         if self.background_thread is None:
             t = threading.Thread(target=self._run)
             t.setDaemon(True)
-            self.stop_event = threading.Event()
             self.background_thread = t
             t.start()
 
@@ -252,12 +251,11 @@ class AsyncLoop:
 
     def stop(self):
         event = self.stop_event
-        if event is not None:
-            event.set()
-            thread = self.background_thread
-            if thread and thread is not threading.current_thread():
-                thread.join()
-            self.background_thread = None
+        event.set()
+        thread = self.background_thread
+        self.background_thread = None
+        if thread and thread is not threading.current_thread():
+            thread.join()
 
 
 class BaseAsyncProtocolHandler:

@@ -404,15 +404,16 @@ class ProtocolConnectorTest(unittest.TestCase):
         self.disconnect(False, False)
 
     def disconnect(self, with_shutdown, with_protocol=True):
-        """ sets up a protocol for disconnection, with optional shutdown method """
+        """ sets up a protocol for disconnection, with optional shutdown method
+        :param with_shutdown:  when False, explicitly removes the shutdown method mock
+
+        """
         delegate = Mock()
         sut = ProtocolConnector(delegate, None)
         protocol = None
         if with_protocol:
             protocol = Mock()
-            if with_shutdown:
-                protocol.shutdown = Mock()
-            else:
+            if not with_shutdown:
                 del protocol.shutdown
 
             sut._protocol = protocol

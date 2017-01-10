@@ -70,6 +70,18 @@ class CaptureBufferedReaderTest(unittest.TestCase):
         sut.close()
         mock.close.assert_not_called()
 
+    def test_peek_next_byte_end(self):
+        mock = Mock()
+        mock.peek.return_value = []
+        sut = CaptureBufferedReader(mock)
+        assert_that(sut.peek_next_byte(), is_(-1))
+
+    def test_peek_next_byte(self):
+        mock = Mock()
+        mock.peek.return_value = [254]
+        sut = CaptureBufferedReader(mock)
+        assert_that(sut.peek_next_byte(), is_(254))
+
 
 def assert_delegates(target, fn, delegate, *args):
     """
