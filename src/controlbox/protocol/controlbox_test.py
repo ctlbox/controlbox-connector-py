@@ -9,6 +9,7 @@ from controlbox.conduit.base import DefaultConduit
 from controlbox.protocol.controlbox import ControlboxProtocolV1, build_chunked_hexencoded_conduit, ResponseDecoder, \
     ResponseDecoderSupport, CommandResponse, Commands
 from controlbox.protocol.io import RWCacheBuffer, CaptureBufferedReader
+from controlbox.protocol.io_test import assert_delegates
 
 
 class ControlboxProtocolV1TestCase(unittest.TestCase):
@@ -426,10 +427,7 @@ class ResponseDecoderTest(unittest.TestCase):
         self.assert_delegates('_read_id_chain', '_read_chain', Mock())
 
     def assert_delegates(self, fn, delegate, *args):
-        mock = Mock(return_value=123)
-        setattr(self.sut, delegate, mock)
-        assert_that(getattr(self.sut, fn)(*args), is_(123))
-        mock.assert_called_once_with(*args)
+        assert_delegates(self.sut, fn, delegate, *args)
 
     def test_read_type(self):
         self.assert_delegates('_read_type', '_read_signed_byte', Mock())

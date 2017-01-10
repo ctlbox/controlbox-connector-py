@@ -3,6 +3,7 @@ Provides building blocks for implementing asynchronous protocols. They are repre
 """
 import logging
 import threading
+import time
 from abc import abstractmethod
 from collections import Callable, defaultdict
 from concurrent.futures import Future
@@ -203,7 +204,8 @@ class AsyncLoop:
 
     def start(self):
         """
-        Starts the background thread.
+        Starts the background thread. It feels like this would suffer a race condition
+        with concurrent updates to the unguarded self.background_thread
         """
         if self.background_thread is None:
             t = threading.Thread(target=self._run)
@@ -221,18 +223,17 @@ class AsyncLoop:
         """
         self._do(self.startup)
         while self.running():
-            try:
-                self._do(self.loop)
-            except Exception as e:
-                self.exception_handler(e)
+            self._do(self.loop)
         self._do(self.shutdown)
         logger.info("background thread exiting")
 
     def _do(self, callme):
         """ runs a function and captures any exceptions """
         try:
+            time.sleep(0)
             callme()
         except Exception as e:
+            time.sleep(0)
             self.exception_handler(e)
 
     def startup(self):
@@ -345,7 +346,10 @@ class BaseAsyncProtocolHandler:
         request = future.request
         if request.response_keys:
             for key in request.response_keys:
-                self._requests.get(key).remove(future)
+                l = self._requests.get(key)
+                l.remove(future)
+                if not len(l):
+                    del self._requests[key]
 
     @abstractmethod
     def _decode_response(self) -> Response:

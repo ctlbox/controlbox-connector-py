@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import Mock
 
+import sys
 from hamcrest import is_, assert_that, calling, raises, equal_to
 
 from controlbox.protocol.async import UnknownProtocolError
@@ -68,3 +69,30 @@ class CaptureBufferedReaderTest(unittest.TestCase):
         sut = CaptureBufferedReader(mock)
         sut.close()
         mock.close.assert_not_called()
+
+
+def assert_delegates(target, fn, delegate, *args):
+    """
+    asserts that the given method fn on object target calls the delegate function with the same arguments
+    and propagates the result
+    :param target:
+    :param fn:
+    :param delegate:
+    :param args:
+    :return:
+    """
+    mock = Mock(return_value=123)
+    setattr(target, delegate, mock)
+    assert_that(getattr(target, fn)(*args), is_(123))
+    mock.assert_called_once_with(*args)
+
+
+def debug_timeout(value):
+    """
+    Replaces the timeout value with a very large one if the tests are running under a debugger.
+    This prevents the main thread from throwing an exception and exiting when the test timees out
+    due to a breakpoint.
+    :param value:
+    :return:
+    """
+    return value if sys.gettrace() is None else 100000
