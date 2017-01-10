@@ -114,29 +114,30 @@ class ControlboxApplicationEvent(StringerMixin, metaclass=ABCMeta):
     """
     The base event class for all connector events.
     """
-    def __init__(self, connector):
-        self.connector = connector
+    def __init__(self, controlbox):
+        self.controlbox = controlbox
 
     @abstractmethod
     def apply(self, visitor: 'ControlboxEventVisitor'):
-        raise NotImplementedError()
+        pass
 
 
 class ObjectEvent(ControlboxApplicationEvent):
     """
     Describes an event that pertains to an object in the controller.
     """
-    def __init__(self, connector, system, idchain):
-        super().__init__(connector)
+    def __init__(self, controlbox, system, idchain):
+        super().__init__(controlbox)
         self.idchain = idchain
         self.system = system
 
 
 class ObjectStateEvent(ObjectEvent):
-    # todo - either need separate events for user/system objects, or we need to
-    # include the profile, with a special value for the system profile.
-    def __init__(self, connector, system, idchain, type, state):
-        super().__init__(connector, system, idchain)
+    """
+    Describes the state of a user or system object.
+    """
+    def __init__(self, controlbox, system, idchain, type, state):
+        super().__init__(controlbox, system, idchain)
         self.type = type
         self.state = state
 
@@ -145,25 +146,24 @@ class ObjectStateEvent(ObjectEvent):
 
 
 class ProfileEvent(ControlboxApplicationEvent):
-    def __init__(self, connector, profile_id):
-        super().__init__(connector)
+    def __init__(self, controlbox, profile_id):
+        super().__init__(controlbox)
         self.profile_id = profile_id
 
 
 class ObjectCreatedEvent(ObjectStateEvent):
     """
-    Event notifying that an object was created in the currently active profile.
+    Event notifying that an object was created. If it is a system object
+    the system itself was responsible for creating it. If it is a user object
+    it may have been created by the system or the user.
     """
-    def __init__(self, connector, idchain, type, state):
-        super().__init__(connector, False, idchain, type, state)
-
     def apply(self, visitor: 'ControlboxEventVisitor'):
         return visitor.object_created(self)
 
 
 class ObjectDeletedEvent(ObjectStateEvent):
-    def __init__(self, connector, idchain, type, state=None):
-        super().__init__(connector, False, idchain, type, state)
+    def __init__(self, controlbox, system, idchain, type, state=None):
+        super().__init__(controlbox, system, idchain, type, state)
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
         return visitor.object_deleted(self)
@@ -176,8 +176,8 @@ class ObjectUpdatedEvent(ObjectStateEvent):
     same as the actual state.
     """
 
-    def __init__(self, connector, system, idchain, type, state, requested_state=None):
-        super().__init__(connector, system, idchain, type, state)
+    def __init__(self, controlbox, system, idchain, type, state, requested_state=None):
+        super().__init__(controlbox, system, idchain, type, state)
         self.requested_state = requested_state
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
@@ -190,9 +190,11 @@ class ProfileListedEvent(ProfileEvent):
     :param: definitions an iterable of object definitions. Each definition is a
         ObjectDefinition instance (id_chain, type, config).
     """
-
-    def __init__(self, connector, profile_id, definitions):
-        super().__init__(connector, profile_id)
+    # todo - since this will also list the contents of the system container
+    # a name that applies to system and user cases would fit better
+    # ObjectDefinitionsEvent?
+    def __init__(self, controlbox, profile_id, definitions):
+        super().__init__(controlbox, profile_id)
         self.definitions = definitions
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
@@ -206,8 +208,8 @@ class ProfileCreatedEvent(ProfileEvent):
         ObjectState instance.
     """
 
-    def __init__(self, connector, profile_id):
-        super().__init__(connector, profile_id)
+    def __init__(self, controlbox, profile_id):
+        super().__init__(controlbox, profile_id)
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
         return visitor.profile_created(self)
@@ -220,8 +222,8 @@ class ProfileDeletedEvent(ProfileEvent):
         ObjectState instance.
     """
 
-    def __init__(self, connector, profile_id):
-        super().__init__(connector, profile_id)
+    def __init__(self, controlbox, profile_id):
+        super().__init__(controlbox, profile_id)
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
         return visitor.profile_deleted(self)
@@ -232,37 +234,36 @@ class ProfileActivatedEvent(ProfileEvent):
     Notification that a profile has become active.
     todo - should also notify which profile became inactive?
     """
-    def __init__(self, connector, profile_id):
-        super().__init__(connector, profile_id)
+    def __init__(self, controlbox, profile_id):
+        super().__init__(controlbox, profile_id)
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
         return visitor.profile_activated(self)
 
 
 class ControllerResetEvent(ControlboxApplicationEvent):
-    def __init__(self, connector, flags, status):
-        super().__init__(connector)
+    # todo - profile constants for the flags
+    def __init__(self, controlbox, flags):
+        super().__init__(controlbox)
         self.flags = flags
-        self.status = status
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
         return visitor.controller_reset(self)
 
 
 class ContainerObjectsLoggedEvent(ObjectEvent):
-    # todo - should this include the logged values too?
-    # todo - logging for system objects
-    def __init__(self, connector, flags, id_chain, values):
-        super().__init__(connector, False, id_chain)
+    def __init__(self, controlbox, system, id_chain, values):
+        super().__init__(controlbox, system, id_chain)
         self.values = values
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
+        # todo - separate methods for system logs?
         return visitor.objects_logged(self)
 
 
 class ProfilesListedEvent(ProfileEvent):
-    def __init__(self, connector, active_profile_id, available_profile_ids):
-        super().__init__(connector, active_profile_id)
+    def __init__(self, controlbox, active_profile_id, available_profile_ids):
+        super().__init__(controlbox, active_profile_id)
         self.available_profile_ids = available_profile_ids
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
@@ -284,6 +285,7 @@ class CommandFailedEvent(ControlboxApplicationEvent):
         super().__init__(controlbox)
         self.command = command
         self.reason = reason
+        self.event = event
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
         return visitor.command_failed(self)
