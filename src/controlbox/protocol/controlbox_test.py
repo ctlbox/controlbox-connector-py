@@ -7,7 +7,7 @@ from hamcrest import assert_that, is_, equal_to, not_, calling, raises, contains
 
 from controlbox.conduit.base import DefaultConduit
 from controlbox.protocol.controlbox import ControlboxProtocolV1, build_chunked_hexencoded_conduit, ResponseDecoder, \
-    ResponseDecoderSupport, CommandResponse, Commands
+    ResponseDecoderSupport, CommandResponse, Commands, Controlbox
 from controlbox.protocol.io import RWCacheBuffer, CaptureBufferedReader
 from controlbox.protocol.io_test import assert_delegates
 
@@ -544,6 +544,16 @@ class CommandResponseTest(unittest.TestCase):
         request = response = Mock()
         sut = CommandResponse(key, response, request)
         self.assertEqual(sut.command_id, 20)
+
+
+class ControlboxTest(unittest.TestCase):
+
+    def test_connector_protocol(self):
+        connector = Mock()
+        protocol = "123"
+        connector.protocol = protocol
+        sut = Controlbox(connector)
+        self.assertEqual(sut.protocol, protocol)
 
 
 if __name__ == '__main__':  # pragma no cover

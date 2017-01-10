@@ -7,30 +7,17 @@ and fires events to registered listeners. The raw event data
 is decoded to application state.
 
 """
-from abc import abstractmethod, ABCMeta
+from abc import ABCMeta, abstractmethod
 
 from controlbox.codecs import ConnectorCodec
-from controlbox.protocol.async import FutureValue, FutureResponse
-from controlbox.protocol.controlbox import CommandResponse, Commands, ReadValueResponseDecoder, \
-    WriteValueResponseDecoder, CreateObjectResponseDecoder, DeleteObjectResponseDecoder, ListProfileResponseDecoder, \
-    CreateProfileResponseDecoder, DeleteProfileResponseDecoder, ActivateProfileResponseDecoder, ResetResponseDecoder, \
-    LogValuesResponseDecoder, ListProfilesResponseDecoder, ReadSystemValueResponseDecoder, \
-    WriteSystemValueResponseDecoder, WriteMaskedValueResponseDecoder, ControlboxProtocolV1
+from controlbox.protocol.async import FutureResponse, FutureValue
+from controlbox.protocol.controlbox import ActivateProfileResponseDecoder, CommandResponse, Commands, Controlbox, \
+    CreateObjectResponseDecoder, CreateProfileResponseDecoder, DeleteObjectResponseDecoder, \
+    DeleteProfileResponseDecoder, ListProfileResponseDecoder, ListProfilesResponseDecoder, LogValuesResponseDecoder, \
+    ReadSystemValueResponseDecoder, ReadValueResponseDecoder, ResetResponseDecoder, WriteMaskedValueResponseDecoder, \
+    WriteSystemValueResponseDecoder, WriteValueResponseDecoder
 from controlbox.support.events import EventSource
 from controlbox.support.mixins import StringerMixin
-
-
-class Controlbox:
-    """
-    The base interface for maintaining a connection to a controlbox instance.
-    It provides access to the protocol.
-    """
-    def __init__(self, connector: ControlboxProtocolV1):
-        self._connector = connector
-
-    @property
-    def protocol(self) -> ControlboxProtocolV1:  # short-hand and type hint
-        return self._connector.protocol
 
 
 class ConnectorListener:

@@ -3,20 +3,10 @@ from unittest.mock import Mock
 
 from hamcrest import assert_that, instance_of, is_
 
-from controlbox.adapter import ReadSystemValueEventFactory, ObjectStateEvent, Controlbox, ReadValueEventFactory, \
+from controlbox.adapter import ReadSystemValueEventFactory, ObjectStateEvent, ReadValueEventFactory, \
     ControlboxApplicationAdapter
 from controlbox.protocol.async import FutureValue
 from controlbox.protocol.controlbox import Commands
-
-
-class ControlboxTest(TestCase):
-
-    def test_connector_protocol(self):
-        connector = Mock()
-        protocol = "123"
-        connector.protocol = protocol
-        sut = Controlbox(connector)
-        self.assertEqual(sut.protocol, protocol)
 
 
 class AbstractReadTest(TestCase):

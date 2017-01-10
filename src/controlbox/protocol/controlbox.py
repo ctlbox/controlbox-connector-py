@@ -790,3 +790,16 @@ class ControlboxProtocolV1(BaseAsyncProtocolHandler):
 
     def __str__(self):
         return "v0.3.0"
+
+
+class Controlbox:
+    """
+    The base interface for maintaining a connection to a controlbox instance.
+    It provides access to the protocol.
+    """
+    def __init__(self, connector: ControlboxProtocolV1):
+        self._connector = connector
+
+    @property
+    def protocol(self) -> ControlboxProtocolV1:  # short-hand and type hint
+        return self._connector.protocol
