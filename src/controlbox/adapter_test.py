@@ -1,13 +1,14 @@
 from unittest import TestCase
 from unittest.mock import Mock
 
-from hamcrest import assert_that, instance_of, is_, raises, calling
+from hamcrest import assert_that, instance_of, is_, raises, calling, equal_to
 
 from controlbox.adapter import ReadSystemValueEventFactory, ObjectStateEvent, ReadValueEventFactory, \
     ControlboxApplicationAdapter, ControlboxApplicationEvent, ObjectEvent, ProfileEvent, ObjectCreatedEvent, \
     ObjectDeletedEvent, ObjectUpdatedEvent, ProfileListedEvent, ProfileCreatedEvent, ProfileDeletedEvent, \
-    ProfileActivatedEvent, ControllerResetEvent, ContainerObjectsLoggedEvent, ProfilesListedEvent, CommandFailedEvent
-from controlbox.protocol.async import FutureValue
+    ProfileActivatedEvent, ControllerResetEvent, ContainerObjectsLoggedEvent, ProfilesListedEvent, CommandFailedEvent, \
+    FailedOperationError, ObjectState
+from controlbox.protocol.async import FutureValue, FutureResponse
 from controlbox.protocol.controlbox import Commands
 
 
@@ -43,7 +44,6 @@ class ControlboxApplicationEventTest(TestCase):
             def apply(self, visitor: 'ControlboxEventVisitor'):
                 pass
 
-
         controlbox = Mock()
         sut = TestEvent(controlbox)
         assert_that(sut.controlbox, is_(controlbox))
@@ -61,14 +61,12 @@ class ObjectEventTest(TestCase):
             def apply(self, visitor: 'ControlboxEventVisitor'):
                 pass
 
-
         controlbox, system, idchain = Mock(), Mock(), Mock()
         sut = TestEvent(controlbox, system, idchain)
         self.assert_object_event(sut, controlbox, system, idchain)
 
 
 class ObjectStateEventTest(TestCase):
-
     @staticmethod
     def assert_object_state_event(sut: ObjectStateEvent, controlbox, system, idchain, type, state):
         assert_that(sut.controlbox, is_(controlbox))
@@ -101,7 +99,6 @@ class ProfileEventTest(TestCase):
         assert_that(sut.controlbox, is_(controlbox))
         assert_that(sut.profile_id, is_(profile_id))
 
-
     def test_constructor(self):
         class TestEvent(ProfileEvent):
             def apply(self, visitor: 'ControlboxEventVisitor'):
@@ -115,7 +112,7 @@ class ProfileEventTest(TestCase):
 class ObjectCreatedEventTest(TestCase):
     def test_constructor(self):
         controlbox, system, idchain, type, state = Mock(), Mock(), Mock(), Mock(), Mock()
-        sut = ObjectCreatedEvent(controlbox, system,idchain, type, state)
+        sut = ObjectCreatedEvent(controlbox, system, idchain, type, state)
         ObjectStateEventTest.assert_object_state_event(sut, controlbox, system, idchain, type, state)
 
     def test_visitor(self):
@@ -128,7 +125,7 @@ class ObjectCreatedEventTest(TestCase):
 class ObjectDeletedEventTest(TestCase):
     def test_constructor(self):
         controlbox, system, idchain, type = Mock(), Mock(), Mock(), Mock()
-        sut = ObjectDeletedEvent(controlbox, system,idchain, type)
+        sut = ObjectDeletedEvent(controlbox, system, idchain, type)
         ObjectStateEventTest.assert_object_state_event(sut, controlbox, system, idchain, type, None)
 
     def test_visitor(self):
@@ -141,7 +138,7 @@ class ObjectDeletedEventTest(TestCase):
 class ObjectUpdatedEventTest(TestCase):
     def test_constructor(self):
         controlbox, system, idchain, type, state, requested = Mock(), Mock(), Mock(), Mock(), Mock(), Mock()
-        sut = ObjectUpdatedEvent(controlbox, system,idchain, type, state, requested)
+        sut = ObjectUpdatedEvent(controlbox, system, idchain, type, state, requested)
         ObjectStateEventTest.assert_object_state_event(sut, controlbox, system, idchain, type, state)
         assert_that(sut.requested_state, is_(requested))
 
@@ -164,7 +161,6 @@ class ProfileListedEventTest(TestCase):
         sut = ProfileListedEvent(Mock(), Mock(), Mock())
         sut.apply(visitor)
         visitor.profile_listed.assert_called_once_with(sut)
-
 
 
 class ProfileCreatedEventTest(TestCase):
@@ -263,6 +259,31 @@ class CommandFailedEventTest(TestCase):
         sut.apply(visitor)
         visitor.command_failed.assert_called_once_with(sut)
 
+    def test_as_exception(self):
+        controlbox, command, reason, event = Mock(), Mock(), Mock(), Mock()
+        sut = CommandFailedEvent(controlbox, command, reason, event)
+        exception = sut.as_exception()
+        assert_that(exception, is_(instance_of(FailedOperationError)))
+        assert_that(exception.event, is_(sut))
+
+
+class ObjectStateTest(TestCase):
+    @staticmethod
+    def assert_object_state(sut, system, idchain, type, state):
+        assert_that(sut.system, is_(system))
+        assert_that(sut.idchain, is_(idchain))
+        assert_that(sut.type, is_(type))
+        assert_that(sut.state, is_(state))
+
+    def test_constructor(self):
+        system, idchain, type, state = Mock(), Mock(), Mock(), Mock()
+        sut = ObjectState(system, idchain, type, state)
+        self.assert_object_state(sut, system, idchain, type, state)
+
+
+class ControlboxEventFactoryTest(TestCase):
+    def test_ReadValueEventFactory(self):
+        pass
 
 
 class ControlboxApplicationAdapterTest(TestCase):
@@ -299,6 +320,27 @@ class ControlboxApplicationAdapterTest(TestCase):
         sut._response_handler(response, [])
         listener.assert_not_called()
 
+    def test__response_handler_wrapper_no_event(self):
+        sut = self.sut
+        response, listener, wrapper = Mock(), Mock(), Mock()
+        sut._event_response = Mock(return_value=None)
+
+        sut.listeners.add(listener)
+        sut._response_handler_wrapper(response, wrapper)
+        sut._event_response.assert_called_once_with(response, wrapper.command)
+        wrapper.set_result.assert_called_once_with(None)
+        listener.assert_not_called()
+
+    def test__response_handler_wrapper_no_wrapper_no_event(self):
+        sut = self.sut
+        response, listener, wrapper, event = Mock(), Mock(), None, None
+        sut._event_response = Mock(return_value=event)
+
+        sut.listeners.add(listener)
+        sut._response_handler_wrapper(response, wrapper)
+        sut._event_response.assert_called_once_with(response, None)
+        listener.assert_not_called()
+
     def test__response_handler_with_future(self):
         sut = self.sut
         event = ObjectStateEvent(sut, False, [1], 23, {})
@@ -322,3 +364,80 @@ class ControlboxApplicationAdapterTest(TestCase):
         assert_that(future.app_wrapper.result(), is_(event_result))
         sut._event_result.assert_called_once_with(event)
         sut._event_response.assert_called_once_with(response, command)
+
+    def test_create_partial_state(self):
+        id_chain, type, config = Mock(), Mock(), Mock()
+        self.sut._encode_config = Mock(return_value=(bytes(), bytes()))
+        assert_that(calling(self.sut.create).with_args(id_chain, type, config), raises(ValueError, 'not complete'))
+
+    def test_create(self):
+        id_chain, type, config = Mock(), Mock(), Mock()
+        self.sut._encode_config = Mock(return_value=(bytes(), None))
+        self.sut.controlbox.protocol.create_object = Mock(return_value=FutureValue())
+        result = self.sut.create(id_chain, type, config)
+        self.sut._encode_config.assert_called_once_with(type, config)
+        assert_that(result.command, is_((self.sut.create, (id_chain, type, config))))
+
+    def test_delete(self):
+        id_chain, type = Mock(), Mock()
+        self.sut.controlbox.protocol.delete_object = Mock(return_value=FutureValue())
+        result = self.sut.delete(id_chain, type)
+        assert_that(result.command, is_((self.sut.delete, (id_chain, type))))
+
+    def test_read(self):
+        id_chain, type = Mock(), Mock()
+        self.sut.controlbox.protocol.read_value = Mock(return_value=FutureValue())
+        result = self.sut.read(id_chain, type)
+        assert_that(result.command, is_((self.sut.read, (id_chain, type))))
+
+    def test_read_system(self):
+        id_chain, type = Mock(), Mock()
+        self.sut.controlbox.protocol.read_system_value = Mock(return_value=FutureValue())
+        result = self.sut.read_system(id_chain, type)
+        assert_that(result.command, is_((self.sut.read_system, (id_chain, type))))
+
+    def test_write(self):
+        id_chain, state = Mock(), Mock()
+        self.sut._write = Mock()
+        self.sut.write(id_chain, state)
+        self.sut._write.assert_called_once_with(self.sut.write, False, id_chain, state, 0)
+
+    def test_write_system(self):
+        id_chain, state = Mock(), Mock()
+        self.sut._write = Mock()
+        self.sut.write_system(id_chain, state)
+        self.sut._write.assert_called_once_with(self.sut.write_system, True, id_chain, state, 0)
+
+    def test_wrap(self):
+        command, future = (), FutureResponse(Mock())
+        wrapper = self.sut.wrap(command, future)
+        assert_that(wrapper, is_(instance_of(FutureValue)))
+        assert_that(wrapper.source, is_(self.sut))
+        assert_that(future.app_wrapper, is_(wrapper))
+        assert_that(wrapper.command, is_(command))
+
+    def test_wrapper_from_non_app_future(self):
+        future = FutureValue()
+        assert_that(self.sut._wrapper_from_futures([future]), is_(None))
+
+    def test_wrapper_from_future_finds_first_app_future(self):
+        request = Mock()
+        futures = [FutureResponse(request), FutureResponse(request), FutureResponse(request)]
+        futures[1].app_wrapper = Mock()
+        futures[2].app_wrapper = Mock()
+        assert_that(self.sut._wrapper_from_futures(futures), is_(futures[1].app_wrapper))
+
+    def test_write_args(self):
+        self.assert_write_args(False, False, self.sut.controlbox.protocol.write_value)
+        self.assert_write_args(False, True, self.sut.controlbox.protocol.write_masked_value)
+        self.assert_write_args(True, False, self.sut.controlbox.protocol.write_system_value)
+        self.assert_write_args(True, True, self.sut.controlbox.protocol.write_system_masked_value)
+
+    def assert_write_args(self, system, use_mask, expected_fn):
+        id_chain, type, buf = Mock(), Mock(), Mock()
+        mask = Mock() if use_mask else None
+        expected_args = (id_chain, type, buf) if not use_mask else (id_chain, type, buf, mask)
+
+        fn, args = self.sut._write_args(system, id_chain, type, buf, mask)
+        assert_that(fn, is_(expected_fn))
+        assert_that(args, is_(equal_to(expected_args)))
