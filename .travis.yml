@@ -1,5 +1,6 @@
 language: python
- - "3.6-dev"
+python:
+ - "3.6"
 install:
 - pip install tox-travis==0.7.2
 - pip install coveralls==1.1
