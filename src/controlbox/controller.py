@@ -1135,7 +1135,7 @@ class TypedControlbox(Controlbox):
             container.id_chain_for(slot), optional=True)
         slot = slot if slot is not None else self.next_slot(container)
         data = (args is not None and obj_class.encode_definition(args)) or None
-        dec = args and obj_class._decode_definition(data, controller=self)
+        dec = args and obj_class._decode_object_definition(data, controller=self)
         if dec != args:
             raise ValueError(
                 "encode/decode mismatch for value %s, encoding %s, decoding %s" % (args, data, dec))

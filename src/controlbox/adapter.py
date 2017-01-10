@@ -15,9 +15,9 @@ from controlbox.protocol.controlbox import ActivateProfileResponseDecoder, Comma
     CreateObjectResponseDecoder, CreateProfileResponseDecoder, DeleteObjectResponseDecoder, \
     DeleteProfileResponseDecoder, ListProfileResponseDecoder, ListProfilesResponseDecoder, LogValuesResponseDecoder, \
     ReadSystemValueResponseDecoder, ReadValueResponseDecoder, ResetResponseDecoder, WriteMaskedValueResponseDecoder, \
-    WriteSystemValueResponseDecoder, WriteValueResponseDecoder
+    WriteSystemValueResponseDecoder, WriteValueResponseDecoder, CommandErrors, NextFreeSlotResponseDecoder
 from controlbox.support.events import EventSource
-from controlbox.support.mixins import StringerMixin
+from controlbox.support.mixins import StringerMixin, CommonEqualityMixin
 
 
 class ConnectorListener:
@@ -110,22 +110,30 @@ class ConnectorListener:
         """
 
 
-class ControlboxApplicationEvent(StringerMixin, metaclass=ABCMeta):
+class ControlboxApplicationEvent(StringerMixin, CommonEqualityMixin, metaclass=ABCMeta):
     """
     The base event class for all connector events.
+    These events describe a command and the result of executing it.
+    They have many similarities to the Command pattern (and they may later be refactored as such.)
+    For example, we might add an execute() method to retry the command.
     """
+
     def __init__(self, controlbox):
         self.controlbox = controlbox
 
     @abstractmethod
     def apply(self, visitor: 'ControlboxEventVisitor'):
-        pass
+        """
+        :param visitor: the object on which to call the appropriate method that pertains to this type of event
+        :return: the result of calling that method
+        """
 
 
 class ObjectEvent(ControlboxApplicationEvent):
     """
     Describes an event that pertains to an object in the controller.
     """
+
     def __init__(self, controlbox, system, idchain):
         super().__init__(controlbox)
         self.idchain = idchain
@@ -136,13 +144,14 @@ class ObjectStateEvent(ObjectEvent):
     """
     Describes the state of a user or system object.
     """
+
     def __init__(self, controlbox, system, idchain, type, state):
         super().__init__(controlbox, system, idchain)
         self.type = type
         self.state = state
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
-        return visitor.system_object_state(self) if self.system else visitor.object_state(self)
+        return visitor.object_state(self)
 
 
 class ProfileEvent(ControlboxApplicationEvent):
@@ -157,6 +166,7 @@ class ObjectCreatedEvent(ObjectStateEvent):
     the system itself was responsible for creating it. If it is a user object
     it may have been created by the system or the user.
     """
+
     def apply(self, visitor: 'ControlboxEventVisitor'):
         return visitor.object_created(self)
 
@@ -190,6 +200,7 @@ class ProfileListedEvent(ProfileEvent):
     :param: definitions an iterable of object definitions. Each definition is a
         ObjectDefinition instance (id_chain, type, config).
     """
+
     # todo - since this will also list the contents of the system container
     # a name that applies to system and user cases would fit better
     # ObjectDefinitionsEvent?
@@ -234,6 +245,7 @@ class ProfileActivatedEvent(ProfileEvent):
     Notification that a profile has become active.
     todo - should also notify which profile became inactive?
     """
+
     def __init__(self, controlbox, profile_id):
         super().__init__(controlbox, profile_id)
 
@@ -257,7 +269,6 @@ class ContainerObjectsLoggedEvent(ObjectEvent):
         self.values = values
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
-        # todo - separate methods for system logs?
         return visitor.objects_logged(self)
 
 
@@ -268,6 +279,15 @@ class ProfilesListedEvent(ProfileEvent):
 
     def apply(self, visitor: 'ControlboxEventVisitor'):
         return visitor.profiles_listed(self)
+
+
+class NextFreeSlotEvent(ObjectEvent):
+    def __init__(self, controlbox, id_chain, slot):
+        super().__init__(controlbox, False, id_chain)
+        self.slot = slot
+
+    def apply(self, visitor: 'ControlboxEventVisitor'):
+        return visitor.next_free_slot_found(self)
 
 
 class CommandFailedEvent(ControlboxApplicationEvent):
@@ -281,6 +301,7 @@ class CommandFailedEvent(ControlboxApplicationEvent):
     create profile listing a created profile ID of -1.
 
     """
+
     def __init__(self, controlbox: 'ControlboxApplicationAdapter', command, reason, event):
         super().__init__(controlbox)
         self.command = command
@@ -301,6 +322,7 @@ class ControlboxEventVisitor(metaclass=ABCMeta):  # pragma no cover - trivial
     """
     A visitor to handle the various types of events.
     """
+
     @abstractmethod
     def object_created(self, event: ObjectCreatedEvent):
         """
@@ -325,19 +347,6 @@ class ControlboxEventVisitor(metaclass=ABCMeta):  # pragma no cover - trivial
         notifies that the state of the object has changed in response to
         an update. Note that internal updates to state within the controller do not
         generate an update event. These state changes are made available via state events.
-        """
-
-    @abstractmethod
-    def system_object_update(self, event: ObjectUpdatedEvent):
-        """
-        notifies that the state of the system object has changed in response to an
-        external update.
-        """
-
-    @abstractmethod
-    def system_object_state(self, event: ObjectStateEvent):
-        """
-        notifies the state of a system object.
         """
 
     @abstractmethod
@@ -372,6 +381,12 @@ class ControlboxEventVisitor(metaclass=ABCMeta):  # pragma no cover - trivial
     def profiles_listed(self, event: ProfilesListedEvent):
         """
         notifies the profiles available and which one is active.
+        """
+
+    @abstractmethod
+    def next_free_slot_found(self, event: NextFreeSlotEvent):
+        """
+        notify that a free slot has been found in a container.
         """
 
     @abstractmethod
@@ -433,11 +448,12 @@ class ControlboxEventVisitorSupport(ControlboxEventVisitor):  # pragma no cover 
         pass
 
 
-class ObjectState:
+class ObjectState(CommonEqualityMixin, StringerMixin):
     """
     Identifies an object in the container
      todo - system objects also have state
     """
+
     def __init__(self, system, idchain, type, state):
         """
         :param system   True if this is an object in the system space.
@@ -463,6 +479,7 @@ class ControlboxEventFactory(metaclass=ABCMeta):
     and command_id are provided for context.
     :param request the decoded request.
     """
+
     @abstractmethod
     def __call__(self, controlbox: "ControlboxApplicationAdapter", response: CommandResponse, request: Request,
                  command_id: int, command):
@@ -488,7 +505,7 @@ class ReadValueEventFactory(ControlboxEventFactory):
         id_chain, type, data_length = request
         status, buffer = response
 
-        value = controlbox._decode_state(status, buffer) if len(buffer) else None
+        value = controlbox._decode_state(type, buffer) if not CommandErrors.failure(status) else None
         event = ObjectUpdatedEvent(controlbox, self.system, id_chain, type, value)
         if value is None:
             event = CommandFailedEvent(controlbox, command, status, event)
@@ -497,14 +514,15 @@ class ReadValueEventFactory(ControlboxEventFactory):
 
 class WriteValueEventFactory(ControlboxEventFactory):
     decoder = WriteValueResponseDecoder
+    system = False
 
     def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
         id_chain, type, data = request
         status, buffer = response
 
-        requested_value = controlbox._decode_state(status, buffer) if status > 0 else None
-        set_value = controlbox._decode_state(type, buffer) if len(buffer) else None
-        event = ObjectUpdatedEvent(controlbox, False, id_chain, type, set_value, requested_value)
+        requested_value = controlbox._decode_state(type, data) if len(data) else None
+        set_value = controlbox._decode_state(type, buffer) if not CommandErrors.failure(status) else None
+        event = ObjectUpdatedEvent(controlbox, self.system, id_chain, type, set_value, requested_value)
         if set_value is None:
             event = CommandFailedEvent(controlbox, command, status, event)
         return event
@@ -517,8 +535,8 @@ class CreateObjectEventFactory(ControlboxEventFactory):
         id_chain, type, data = request
         status_code, = response
         value = command[1][2]
-        event = ObjectCreatedEvent(controlbox, id_chain, type, value)
-        if status_code < 0:
+        event = ObjectCreatedEvent(controlbox, False, id_chain, type, value)
+        if CommandErrors.failure(status_code):
             event = CommandFailedEvent(controlbox, command, status_code, event)
         return event
 
@@ -528,10 +546,10 @@ class DeleteObjectEventFactory(ControlboxEventFactory):
 
     def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
         id_chain, type = request
-        code, = response
-        event = ObjectDeletedEvent(controlbox, id_chain, type)
-        if code < 0:
-            event = CommandFailedEvent(controlbox, command, response, event)
+        status_code, = response
+        event = ObjectDeletedEvent(controlbox, False, id_chain, type)
+        if CommandErrors.failure(status_code):
+            event = CommandFailedEvent(controlbox, command, status_code, event)
         return event
 
 
@@ -542,11 +560,27 @@ class ListProfileEventFactory(ControlboxEventFactory):
         profile_id, = request
         status, definitions = response
         system = profile_id == -1
-        object_defs = [controlbox._decode_definition(system, x) for x in definitions]
+        object_defs = None
+        if definitions is not None:
+            object_defs = [controlbox._decode_object_definition(system, x) for x in definitions]
         event = ProfileListedEvent(controlbox, profile_id, object_defs)
-        if status < 0:
+        if CommandErrors.failure(status):
             event = CommandFailedEvent(controlbox, command, status, event)
         return event
+
+
+class NextFreeSlotEventFactory(ControlboxEventFactory):
+    decoder = NextFreeSlotResponseDecoder
+
+    def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
+        id_chain, = request
+        status, = response
+        slot = None if CommandErrors.failure(status) else status
+        event = NextFreeSlotEvent(controlbox, id_chain, slot)
+        if slot is None:
+            event = CommandFailedEvent(controlbox, command, status, event)
+        return event
+
 
 
 class CreateProfileEventFactory(ControlboxEventFactory):
@@ -554,10 +588,9 @@ class CreateProfileEventFactory(ControlboxEventFactory):
 
     def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
         profile_id, = response
-        event = ProfileCreatedEvent(controlbox, profile_id)
-        # todo factor valid/invalid id logic for profiles to a central method
-        if profile_id < 0:
-            event = CommandFailedEvent(controlbox, command, response, event)
+        event = ProfileCreatedEvent(controlbox, profile_id if not CommandErrors.failure(profile_id) else None)
+        if CommandErrors.failure(profile_id):
+            event = CommandFailedEvent(controlbox, command, profile_id, event)
         return event
 
 
@@ -568,8 +601,8 @@ class DeleteProfileEventFactory(ControlboxEventFactory):
         profile_id, = request
         status, = response
         event = ProfileDeletedEvent(controlbox, profile_id)
-        if status < 0:
-            event = CommandFailedEvent(controlbox, command, response, event)
+        if CommandErrors.failure(status):
+            event = CommandFailedEvent(controlbox, command, status, event)
         return event
 
 
@@ -580,35 +613,40 @@ class ActivateProfileEventFactory(ControlboxEventFactory):
         profile_id, = request
         status, = response
         event = ProfileActivatedEvent(controlbox, profile_id)
-        if status < 0:
-            event = CommandFailedEvent(controlbox, command, response, event)
+        if CommandErrors.failure(status):
+            event = CommandFailedEvent(controlbox, command, status, event)
         return event
 
 
-class ResetEventFactory(ControlboxEventFactory):
+class ControllerResetEventFactory(ControlboxEventFactory):
     decoder = ResetResponseDecoder
 
     def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
         flags, = request
         status, = response
-        event = ControllerResetEvent(controlbox, flags, status)
+        event = ControllerResetEvent(controlbox, flags)
         if status < 0:
-            event = CommandFailedEvent(controlbox, command, response, event)
+            event = CommandFailedEvent(controlbox, command, status, event)
         return event
 
 
-class NoOpEventFactory(ControlboxEventFactory):
-    def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
-        pass
+# class NoOpEventFactory(ControlboxEventFactory):
+#     def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
+#         pass
 
 
-class LogValuesEventFactory(ControlboxEventFactory):
+class ContainerObjectsLoggedEventFactory(ControlboxEventFactory):
     decoder = LogValuesResponseDecoder
+    event = ContainerObjectsLoggedEvent
 
     def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
         flags, id_chain = request
-        # todo - complete parsing response
-        return ContainerObjectsLoggedEvent(controlbox, flags, id_chain)
+        status, encoded_values = response
+        system = bool(flags & 0x02)  # todo - move the ad hoc value to an spec for the log command
+        values = None
+        if encoded_values is not None:
+            values = [controlbox._decode_object_value(system, x) for x in encoded_values]
+        return self.event(controlbox, system, id_chain, values)
 
 
 class ListProfilesEventFactory(ControlboxEventFactory):
@@ -624,38 +662,32 @@ class ReadSystemValueEventFactory(ReadValueEventFactory):
     system = True
 
 
-class WriteSystemValueEventFactory(ControlboxEventFactory):
+class WriteSystemValueEventFactory(WriteValueEventFactory):
     decoder = WriteSystemValueResponseDecoder
-
-    def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
-        id_chain, type, to_write = request
-        buffer, = response
-        requested_value = controlbox._decode_state(type, buffer)
-        set_value = controlbox._decode_state(type, buffer)
-        return ObjectUpdatedEvent(controlbox, True, id_chain, type, requested_value, set_value)
+    system = True
 
 
 class WriteMaskedValueEventFactory(ControlboxEventFactory):
     decoder = WriteMaskedValueResponseDecoder
+    system = False
 
     def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
-        id_chain, type, _ = request
-        buffer, = response
-        set_value = controlbox._decode_state(type, buffer)
-        return ObjectUpdatedEvent(controlbox, False, id_chain, type, set_value)
+        id_chain, type, buf, mask = request
+        status, buffer = response
+        requested_value = controlbox._decode_state(type, buf, mask)
+        set_value = controlbox._decode_state(type, buffer) if CommandErrors.success(status) else None
+        event = ObjectUpdatedEvent(controlbox, self.system, id_chain, type, set_value, requested_value)
+        if CommandErrors.failure(status):
+            event = CommandFailedEvent(controlbox, command, status, event)
+        return event
 
 
-class WriteSystemMaskedValueEventFactory(ControlboxEventFactory):
+class WriteSystemMaskedValueEventFactory(WriteMaskedValueEventFactory):
     decoder = WriteMaskedValueResponseDecoder
-
-    def __call__(self, controlbox: 'ControlboxApplicationAdapter', response, request, command_id, command):
-        id_chain, type, _ = request
-        buffer, = response
-        set_value = controlbox._decode_state(type, buffer)
-        return ObjectUpdatedEvent(controlbox, True, id_chain, type, set_value)
+    system = True
 
 
-class AsyncLogValuesEventFactory(LogValuesEventFactory):
+class AsyncContainerObjectsLoggedEventFactory(ContainerObjectsLoggedEventFactory):
     pass
 
 
@@ -685,19 +717,19 @@ class ControlboxApplicationAdapter:
         Commands.create_object: CreateObjectEventFactory(),
         Commands.delete_object: DeleteObjectEventFactory(),
         Commands.list_profile: ListProfileEventFactory(),
-        Commands.next_free_slot: NoOpEventFactory(),  # NextFreeSlotEventFactory,
+        Commands.next_free_slot: NextFreeSlotEventFactory(),
         Commands.create_profile: CreateProfileEventFactory(),
         Commands.delete_profile: DeleteProfileEventFactory(),
         Commands.activate_profile: ActivateProfileEventFactory(),
-        Commands.reset: ResetEventFactory(),
-        Commands.log_values: LogValuesEventFactory(),
-        Commands.next_free_slot_root: NoOpEventFactory(),
+        Commands.reset: ControllerResetEventFactory(),
+        Commands.log_values: ContainerObjectsLoggedEventFactory(),
+        Commands.next_free_slot_root: NextFreeSlotEventFactory(),
         Commands.list_profiles: ListProfilesEventFactory(),
         Commands.read_system_value: ReadSystemValueEventFactory(),
         Commands.write_system_value: WriteSystemValueEventFactory(),
         Commands.write_masked_value: WriteMaskedValueEventFactory(),
         Commands.write_system_masked_value: WriteSystemMaskedValueEventFactory(),
-        Commands.async_log_values: AsyncLogValuesEventFactory()
+        Commands.async_log_values: AsyncContainerObjectsLoggedEventFactory()
     }
 
     class ResultFromEvent(ControlboxEventVisitor):
@@ -707,9 +739,6 @@ class ControlboxApplicationAdapter:
 
         def profile_created(self, event: ProfileCreatedEvent):
             return event.profile_id
-
-        def system_object_state(self, event: ObjectStateEvent):
-            return event.state
 
         def object_deleted(self, event: ObjectDeletedEvent):
             return None
@@ -727,25 +756,25 @@ class ControlboxApplicationAdapter:
             return None
 
         def command_failed(self, event: CommandFailedEvent):
-            raise event.as_exception()
+            return event.as_exception()
 
         def objects_logged(self, event: ContainerObjectsLoggedEvent):
             return event.values
 
-        def system_object_update(self, event: ObjectUpdatedEvent):
+        def object_state(self, event: ObjectStateEvent):
             return event.state
 
         def profile_listed(self, event: ProfileListedEvent):
             return event.definitions
-
-        def object_state(self, event: ObjectStateEvent):
-            return event.state
 
         def profiles_listed(self, event: ProfilesListedEvent):
             return event.profile_id, event.available_profile_ids
 
         def profile_deleted(self, event: ProfileDeletedEvent):
             return None
+
+        def next_free_slot_found(self, event: NextFreeSlotEvent):
+            return event.slot
 
     def __init__(self, controlbox: Controlbox, constructor_codec: ConnectorCodec, state_codec: ConnectorCodec):
         """
@@ -808,20 +837,30 @@ class ControlboxApplicationAdapter:
         return self.event_factories.get(command_id)
 
     def _encode_state(self, type, state):
+        """turns an application provided object into a byte buffer"""
         return self.state_codec.encode(type, state)
 
     def _decode_state(self, type, buffer, mask=None):
+        """turns a byte buffer and optional into an application provided object"""
         return self.state_codec.decode(type, buffer, mask)
 
     def _decode_config(self, type, buffer):
+        """turns a buffer encoding an object configuration into an application provided object"""
         return self.constructor_codec.decode(type, buffer)
 
     def _encode_config(self, type, config):
+        """turns an application provided object configuration into a buffer and mask"""
         return self.constructor_codec.encode(type, config)
 
-    def _decode_definition(self, system, object_def):
+    def _decode_object_definition(self, system, object_def) -> ObjectDefinition:
+        """decodes an object definition into an ObjectDefinition instance"""
         id_chain, type, data = object_def
-        return ObjectState(system, id_chain, type, self._decode_config(type, data))
+        return ObjectDefinition(system, id_chain, type, self._decode_config(type, data))
+
+    def _decode_object_value(self, system, encoded) -> ObjectState:
+        """decodes an object value into an ObjectState """
+        id_chain, type, data = encoded
+        return ObjectState(system, id_chain, type, self._decode_state(type, data))
 
     def create(self, id_chain, object_type, config):
         """create a new instance on the controller with the given initial state"""

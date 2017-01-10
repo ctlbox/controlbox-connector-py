@@ -170,7 +170,8 @@ class ControlboxProtocolV1DecodeResponseTestCase(unittest.TestCase):
         self.push_response(
             [Commands.list_profile, 1, 127,
              3, 1, 0x23, 2, 3, 4,
-             3, 0x81, 2, 0x24, 0, 0])
+             3, 0x81, 2, 0x24, 0,
+             0])
         assert_future(future, is_(equal_to((127, [
             (bytes([1]), 0x23, bytes([3, 4])),
             (bytes([1, 2]), 0x24, bytes())
@@ -179,7 +180,7 @@ class ControlboxProtocolV1DecodeResponseTestCase(unittest.TestCase):
     def test_send_list_profile_failed_command_bytes(self):
         future = self.sut.list_profile(1)
         self.push_response([Commands.list_profile, 1, 254])
-        assert_future(future, is_(equal_to((-2, []))))
+        assert_future(future, is_(equal_to((-2, None))))
 
     def test_send_next_free_slot_command_bytes(self):
         future = self.sut.next_slot([0x81, 0x82, 3])

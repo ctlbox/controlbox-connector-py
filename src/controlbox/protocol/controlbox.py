@@ -174,6 +174,30 @@ class CommandErrors:
     invalid_profile = -68
     invalid_id = -69
 
+    @staticmethod
+    def failure(status):
+        """
+        >>> CommandErrors.failure(CommandErrors.invalid_parameter)
+        True
+        >>> CommandErrors.failure(127)
+        False
+        >>> CommandErrors.failure(0)
+        False
+        """
+        return status < 0
+
+    @staticmethod
+    def success(status):
+        """
+        >>> CommandErrors.success(CommandErrors.invalid_parameter)
+        False
+        >>> CommandErrors.success(127)
+        True
+        >>> CommandErrors.success(0)
+        True
+        """
+        return status >= 0
+
 
 # A note to maintainers: These ResponseDecoder objects have to be written carefully - the
 # _parse and _parse_response methods have to match exactly the command request and command response
@@ -363,7 +387,8 @@ class WriteMaskedValueResponseDecoder(WriteValueResponseDecoder):
         id_chain = self._read_id_chain(buf)  # id chain
         object_type = self._read_type(buf)  # object object_type
         to_write = self._read_vardata(buf, 2)  # data is 2x longer since the data and the mask are encoded
-        return id_chain, object_type, to_write
+        buf, mask = separate(to_write, 2)
+        return id_chain, object_type, buf, mask
 
         # use the superclass to decode the response - the response is the same as for a regular write
 
@@ -400,8 +425,9 @@ class ListProfileResponseDecoder(ResponseDecoder):
         """Retrieve a tuple, first value is status code, 2nd is list of tuples (id, object_type, data)"""
         # so we can distinguish between an error and an empty profile.
         status = self._read_status_code(stream)
-        values = []
-        if status >= 0:
+        values = None
+        if CommandErrors.success(status):
+            values = []
             while self._read_byte(stream) == Commands.create_object:  # has more data
                 obj_defn = self._read_object_defn(stream)
                 values.append(obj_defn)
@@ -419,7 +445,7 @@ class NextFreeSlotResponseDecoder(ResponseDecoder):
 
 class NextFreeSlotRootResponseDecoder(ResponseDecoder):
     def _parse_request(self, buf):  # additional command arguments to read
-        return tuple()
+        return tuple(),                  # empty id-chain
 
     def _parse_response(self, stream):
         """Return the next free slot command response is a byte indicating the next free slot. """
@@ -459,6 +485,7 @@ class ListProfilesResponseDecoder(ResponseDecoder):
 
     def _parse_response(self, stream):
         # read active profile followed by available profiles
+        # todo - add a status code so errors can be reported
         r = self._read_remainder(stream)
         active_profile = signed_byte(r[0])  # active profile is signed
         return active_profile, r[1:]
@@ -489,6 +516,9 @@ class LogValuesResponseDecoder(ResponseDecoder):
         return status, values
 
     def _read_values(self, stream):
+        """
+        Retrieves an iterable of values. Each value is a tuple (id_chain, object_type, object_state)
+        """
         values = []
         while self._read_byte(stream) == Commands.read_value:  # has more data
             id_chain = self._read_id_chain(stream)
@@ -574,13 +604,13 @@ def interleave(*args):
     return bytes([x for z in zip(*args) for x in z])
 
 
-# def separate(buffer, count):
-#     """De-interleave one buffer into two or more buffers.
-#
-#     >>> separate(b'ADBECF', 2)
-#     (b'ABC', b'DEF')
-#     """
-#     return zip(*[buffer[i::count] for i in range(count)])
+def separate(buffer, count):
+    """De-interleave one buffer into two or more buffers.
+
+    >>> separate(b'ADBECF', 2)
+    (b'ABC', b'DEF')
+    """
+    return tuple([buffer[i::count] for i in range(count)])
 
 
 class CommandResponse(ResponseSupport):
