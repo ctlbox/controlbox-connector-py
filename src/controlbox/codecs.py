@@ -6,7 +6,6 @@ from controlbox.support.mixins import CommonEqualityMixin, StringerMixin
 class ConnectorCodec:
     """
     Knows how to convert object state to/from the on-wire data format.
-    todo - move somewhere else? doesn't seem to fit with events?
     """
 
     @abstractmethod

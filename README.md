@@ -286,3 +286,28 @@ Application objects for the controller:
 By arranging it like this, we keep the application in sync with the connected controllers.
 
 Resynching the application and controller
+
+
+Todo - document the key distinction between the system space and user space:
+The types of system objects and user objects come from the same namespace
+
+System objects
+- System objects typically pre-instantiated by the system and are always available
+- system space is created and managed by the system. Only the system creates these objects and destroys them
+- the system space is typically not persisted  (although this is an implementation detail - an app may choose
+to persist object in custom storage, but the controlbox framework doesn't provide for that out the box.)
+- The system container may optionally list the object definitions if the application
+supports that.
+- the framework provides for logging vales from the system container
+- typically the same system objects are available regardless of which profile is loaded, although the application
+may take steps to change system objects with the loaded profile if that is meaningful to the application.
+
+User objects
+- created by the application, either code on the controller or external code using the protocol
+- created object definitions are persisted (todo, add a way to specifiy creation of a non-persisted object.)
+- user objects are stored in a container associated with a profile. the system supports multiple configurations
+via multiple profiles
+- listing the object definitions is done by enumerating them in persistent storage
+- the values of objects in the root or any other container can be logged
+
+
