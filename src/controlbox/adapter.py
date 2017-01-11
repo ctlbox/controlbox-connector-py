@@ -582,7 +582,6 @@ class NextFreeSlotEventFactory(ControlboxEventFactory):
         return event
 
 
-
 class CreateProfileEventFactory(ControlboxEventFactory):
     decoder = CreateProfileResponseDecoder
 

@@ -251,7 +251,7 @@ class ProfilesListedEventTest(TestCase):
 class NextFreeSlotEventTest(TestCase):
     def test_constructor(self):
         controlbox, id_chain, slot = Mock(), Mock(), Mock()
-        sut = NextFreeSlotEvent(controlbox,id_chain, slot)
+        sut = NextFreeSlotEvent(controlbox, id_chain, slot)
         assert_that(sut.controlbox, is_(controlbox))
         assert_that(sut.idchain, is_(id_chain))
         assert_that(sut.slot, is_(slot))
@@ -325,7 +325,8 @@ class ControlboxEventFactoryTest(TestCase):
         status, data = 10, Mock()
         response = status, data
         event = sut(self.controlbox, response, request, 1, self.command)
-        assert_that(event, is_(equal_to(ObjectUpdatedEvent(self.controlbox, system, id_chain, type, self.decode_state))))
+        assert_that(event, is_(equal_to(
+            ObjectUpdatedEvent(self.controlbox, system, id_chain, type, self.decode_state))))
         self.controlbox._decode_state.assert_called_with(type, data)
 
     def test_ReadValueEventFactory_fail(self):
@@ -468,7 +469,6 @@ class ControlboxEventFactoryTest(TestCase):
         event = sut(self.controlbox, response, request, 1, self.command)
         assert_that(event, is_(equal_to(ProfilesListedEvent(self.controlbox, active, available))))
 
-
     def test_CreateProfileEventFactory(self):
         self.assert_profile_event(CreateProfileEventFactory, ProfileCreatedEvent, None, (4,))
 
@@ -545,8 +545,8 @@ class ControlboxEventFactoryTest(TestCase):
         if no_values:
             assert_that(self.controlbox._decode_state.mock_calls, has_length(0))
         else:
-            assert_that(self.controlbox._decode_state.mock_calls, # id_chain is not passed, just type and buffer
-                    is_(equal_to([call(*definitions[0][1:]), call(*definitions[1][1:])])))
+            assert_that(self.controlbox._decode_state.mock_calls,  # id_chain is not passed, just type and buffer
+                        is_(equal_to([call(*definitions[0][1:]), call(*definitions[1][1:])])))
 
     def test_NextFreeSlotEventFactory(self):
         sut = NextFreeSlotEventFactory()
@@ -564,7 +564,6 @@ class ControlboxEventFactoryTest(TestCase):
         event = sut(self.controlbox, response, request, 1, self.command)
         failed = NextFreeSlotEvent(self.controlbox, id_chain, None)
         assert_that(event, is_(CommandFailedEvent(self.controlbox, self.command, status, failed)))
-
 
 
 class ResultFromEventTest(TestCase):
@@ -746,7 +745,7 @@ class ControlboxApplicationAdapterTest(TestCase):
         self.sut.state_codec.encode.assert_called_once_with(type, state)
 
     def test_decode_state(self):
-        buffer, encoded, decoded = Mock(), Mock(), Mock()
+        buffer, decoded = Mock(), Mock()
         type = 23
         self.sut.state_codec = Mock()
         self.sut.state_codec.decode = Mock(return_value=decoded)
@@ -764,7 +763,7 @@ class ControlboxApplicationAdapterTest(TestCase):
         self.sut.constructor_codec.encode.assert_called_once_with(type, state)
 
     def test_decode_config(self):
-        buffer, encoded, decoded = Mock(), Mock(), Mock()
+        buffer, decoded = Mock(), Mock()
         type = 23
         self.sut.constructor_codec = Mock()
         self.sut.constructor_codec.decode = Mock(return_value=decoded)
