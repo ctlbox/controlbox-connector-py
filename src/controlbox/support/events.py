@@ -21,6 +21,9 @@ class EventSource(object):
             self._handlers.remove(handler)
         return self
 
+    def handlers(self):
+        return tuple(self._handlers)
+
     def fire(self, *args, **kwargs):
         self._fire(*args, **kwargs)
 
