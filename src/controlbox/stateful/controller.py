@@ -7,9 +7,9 @@ It is stateful.  For a stateless equivalent, see events.py and ControlboxEvents.
 """
 from abc import abstractmethod
 
-from controlbox.adapter import Controlbox, FailedOperationError, ProfileNotActiveError
 from controlbox.protocol.async import FutureResponse
-from controlbox.protocol.controlbox import signed_byte, unsigned_byte, longDecode
+from controlbox.protocol.controlbox import longDecode, signed_byte, unsigned_byte
+from controlbox.stateless.api import Controlbox, FailedOperationError, ProfileNotActiveError
 from controlbox.support.events import EventSource
 from controlbox.support.mixins import CommonEqualityMixin
 

@@ -39,12 +39,13 @@ Controller (Typically embedded, C++):
    as instructed by the protocol
  - wire protocol: data bytes to wire format and message chunking
  - Conduit - send/receive raw bytes to an endpoint
-
+```
      ↑   |
      |   |   Conduit
      |   |   (serial/TCP/stdio...)
      |   |
      |   ↓
+```
 
  Connector (this repo, python):
 

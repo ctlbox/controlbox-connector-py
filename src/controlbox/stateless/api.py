@@ -9,15 +9,15 @@ is decoded to application state.
 """
 from abc import ABCMeta, abstractmethod
 
-from controlbox.codecs import ConnectorCodec
 from controlbox.protocol.async import FutureResponse, FutureValue, Request
-from controlbox.protocol.controlbox import ActivateProfileResponseDecoder, CommandResponse, Commands, Controlbox, \
-    CreateObjectResponseDecoder, CreateProfileResponseDecoder, DeleteObjectResponseDecoder, \
+from controlbox.protocol.controlbox import ActivateProfileResponseDecoder, CommandErrors, CommandResponse, Commands, \
+    Controlbox, CreateObjectResponseDecoder, CreateProfileResponseDecoder, DeleteObjectResponseDecoder, \
     DeleteProfileResponseDecoder, ListProfileResponseDecoder, ListProfilesResponseDecoder, LogValuesResponseDecoder, \
-    ReadSystemValueResponseDecoder, ReadValueResponseDecoder, ResetResponseDecoder, WriteMaskedValueResponseDecoder, \
-    WriteSystemValueResponseDecoder, WriteValueResponseDecoder, CommandErrors, NextFreeSlotResponseDecoder
+    NextFreeSlotResponseDecoder, ReadSystemValueResponseDecoder, ReadValueResponseDecoder, ResetResponseDecoder, \
+    WriteMaskedValueResponseDecoder, WriteSystemValueResponseDecoder, WriteValueResponseDecoder
+from controlbox.stateless.codecs import ConnectorCodec
 from controlbox.support.events import EventSource
-from controlbox.support.mixins import StringerMixin, CommonEqualityMixin
+from controlbox.support.mixins import CommonEqualityMixin, StringerMixin
 
 
 class ConnectorListener:

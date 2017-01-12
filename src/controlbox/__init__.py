@@ -1,5 +1,15 @@
 """
 
+The subpackages:
+
+- conduit:      bidirectional stream to an endpoint (serial, tcp, process...)
+- connector:    a factory for conduits to a given endpoint
+- config:       extensions to ConfObj to allow more flexible/nested/tiered configuration of modules
+- protocol:     the low-level controlbox protocol - this is the lowest layer that you can talk to a remote controlbox
+- support:      utility classes for events, equality, to string
+- stateless:    stateless interface to encode/decode application objects to the protocol
+- stateful:     (wip) stateful interface that maintains application state in proxy objects
+
 
 Controller Connections
 

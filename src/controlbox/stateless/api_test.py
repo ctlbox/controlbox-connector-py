@@ -1,19 +1,19 @@
 from unittest import TestCase
 from unittest.mock import Mock, call
 
-from hamcrest import assert_that, calling, equal_to, instance_of, is_, raises, has_length
+from hamcrest import assert_that, calling, equal_to, has_length, instance_of, is_, raises
 
-from controlbox.adapter import ActivateProfileEventFactory, CommandFailedEvent, ContainerObjectsLoggedEvent, \
-    ControlboxApplicationAdapter, ControlboxApplicationEvent, ControllerResetEvent, CreateObjectEventFactory, \
-    CreateProfileEventFactory, DeleteObjectEventFactory, DeleteProfileEventFactory, FailedOperationError, \
-    ObjectCreatedEvent, ObjectDeletedEvent, ObjectEvent, ObjectState, ObjectStateEvent, ObjectUpdatedEvent, \
-    ProfileActivatedEvent, ProfileCreatedEvent, ProfileDeletedEvent, ProfileEvent, ProfileListedEvent, \
-    ProfilesListedEvent, ReadSystemValueEventFactory, ReadValueEventFactory, WriteValueEventFactory, \
-    ListProfileEventFactory, ControllerResetEventFactory, ContainerObjectsLoggedEventFactory, ObjectDefinition, \
-    WriteSystemValueEventFactory, WriteMaskedValueEventFactory, WriteSystemMaskedValueEventFactory, NextFreeSlotEvent, \
-    NextFreeSlotEventFactory, ListProfilesEventFactory
 from controlbox.protocol.async import FutureResponse, FutureValue
-from controlbox.protocol.controlbox import Commands, CommandResponse
+from controlbox.protocol.controlbox import CommandResponse, Commands
+from controlbox.stateless.api import ActivateProfileEventFactory, CommandFailedEvent, ContainerObjectsLoggedEvent, \
+    ContainerObjectsLoggedEventFactory, ControlboxApplicationAdapter, ControlboxApplicationEvent, ControllerResetEvent,\
+    ControllerResetEventFactory, CreateObjectEventFactory, CreateProfileEventFactory, DeleteObjectEventFactory, \
+    DeleteProfileEventFactory, FailedOperationError, ListProfileEventFactory, ListProfilesEventFactory, \
+    NextFreeSlotEvent, NextFreeSlotEventFactory, ObjectCreatedEvent, ObjectDefinition, ObjectDeletedEvent, ObjectEvent,\
+    ObjectState, ObjectStateEvent, ObjectUpdatedEvent, ProfileActivatedEvent, ProfileCreatedEvent, ProfileDeletedEvent,\
+    ProfileEvent, ProfileListedEvent, ProfilesListedEvent, ReadSystemValueEventFactory, ReadValueEventFactory, \
+    WriteMaskedValueEventFactory, WriteSystemMaskedValueEventFactory, WriteSystemValueEventFactory, \
+    WriteValueEventFactory
 
 
 class AbstractReadTest(TestCase):

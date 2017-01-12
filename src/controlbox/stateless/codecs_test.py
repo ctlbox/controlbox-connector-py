@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from controlbox.codecs import ConnectorCodec, DictionaryMappingCodec, IdentityCodec, TypeMappingCodec
+from controlbox.stateless.codecs import ConnectorCodec, DictionaryMappingCodec, IdentityCodec, TypeMappingCodec
 
 
 class ConnectorCodecTest(TestCase):

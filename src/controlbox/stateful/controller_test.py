@@ -1,11 +1,11 @@
+import unittest
 from unittest.mock import MagicMock
 
-from hamcrest import assert_that, is_, equal_to, has_length
+from hamcrest import assert_that, equal_to, has_length, is_
 
-from controlbox.controller import fetch_dict, ForwardingDecoder, ValueDecoder, ValueEncoder, ForwardingEncoder, \
-    ControllerLoop, ControllerLoopState, ControllerLoopContainer, SystemProfile, \
-    DynamicContainer, TypedControlbox, RootContainer, ValueObject, LongEncoder, RootContainerTraits
-import unittest
+from controlbox.stateful.controller import ControllerLoop, ControllerLoopContainer, ControllerLoopState, \
+    DynamicContainer, ForwardingDecoder, ForwardingEncoder, LongEncoder, RootContainer, RootContainerTraits, \
+    SystemProfile, TypedControlbox, ValueDecoder, ValueEncoder, ValueObject, fetch_dict
 
 
 class FetchDictTestCase(unittest.TestCase):

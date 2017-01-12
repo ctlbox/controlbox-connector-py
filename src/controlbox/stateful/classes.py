@@ -2,7 +2,8 @@
 a library of classes for potential reuse in different controlbox applications.
 """
 
-from controlbox.controller import ReadWriteSystemObject, mask, LongDecoder, ShortDecoder, ShortEncoder, LongEncoder
+from controlbox.stateful.controller import LongDecoder, LongEncoder, ReadWriteSystemObject, ShortDecoder, ShortEncoder,\
+    mask
 
 """
 #todo - I'm not happy with these proxy objects - the public interface is littered with encoding/decoding methods
