@@ -372,7 +372,7 @@ class BaseAsyncProtocolHandler:
             return self.read_response()
 
     def read_response(self):
-        """ reads the next response from the conduit and processes it. """
+        """ synchronously reads the next response from the conduit and processes it. """
         response = self._decode_response()
         return self.process_response(response)
 

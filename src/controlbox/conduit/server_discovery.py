@@ -24,7 +24,8 @@ class TCPServerDiscovery(PolledResourceDiscovery):
     Uses zeroconf to discover TCP services.
     To keep all the events on the same thread, this captures events from zeroconf and pushes
     them to a queue. These events are then posted next time update() is called.
-    The resources discovered are ZeroconfTCPServerEndpoint.
+    The resources discovered are ZeroconfTCPServerEndpoint, identified
+    by the hostname/ip and port (as a string). See TCPServerEndpoint.key()
     """
     def __init__(self, service_subtype, use_zeroconf=True, known_addresses=tuple()):
         """

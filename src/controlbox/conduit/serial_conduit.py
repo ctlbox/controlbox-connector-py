@@ -142,12 +142,22 @@ def detect_port(port):
 
 
 class SerialDiscovery(PolledResourceDiscovery):
-    """ Monitors local serial ports for known devices. """
+    """ Monitors local serial ports for known devices.
+
+    The resources discovered have key as the serial port name,
+    and the resource as ListPortInfo
+    """
 
     def __init__(self):
         super().__init__()
 
     def _is_allowed(self, key, device: serial.tools.list_ports_common.ListPortInfo):
+        """
+        The given port is allowed if it corresponds to a recognized USB vid:pid
+        :param key:         The serial port name
+        :param device:      The ListPortInfo from the serial enumeration.
+        :return:
+        """
         return is_recognised_device(device)
 
     def _fetch_available(self):

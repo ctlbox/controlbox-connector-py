@@ -43,6 +43,10 @@ class ResourceDiscovery:
 
 
 class PolledResourceDiscovery(ResourceDiscovery):
+    """
+    Determines updates to the available resources in response to calling
+    update()
+    """
 
     def __init__(self):
         super().__init__()
@@ -53,6 +57,8 @@ class PolledResourceDiscovery(ResourceDiscovery):
         Template method to allow subclasses to pre-filter the set of
         recognized resources for any that should be excluded from
         discovery.
+
+        :param
         """
         return True
 
@@ -136,7 +142,7 @@ class PolledResourceDiscovery(ResourceDiscovery):
 
     def _fetch_available(self):
         """ Template method for subclasses to determine the current
-            resources available.:
+            resources available.
         :return: a dictionary of resource handle to resource instance.
         """
         return {}

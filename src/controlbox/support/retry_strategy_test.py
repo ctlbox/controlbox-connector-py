@@ -2,7 +2,12 @@ from unittest import TestCase
 
 from hamcrest import is_, assert_that
 
-from controlbox.support.retry_strategy import PeriodRetryStrategy
+from controlbox.support.retry_strategy import PeriodRetryStrategy, RetryStrategy
+
+
+class RetryStrategyTest(TestCase):
+    def test_is_zero(self):
+        assert_that(RetryStrategy()(), is_(0))
 
 
 class PeriodRetryStrategyTest(TestCase):

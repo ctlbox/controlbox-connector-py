@@ -58,7 +58,10 @@ class ProcessConduit(DefaultConduit):
 
 
 class ProcessDiscovery(PolledResourceDiscovery):
-    """ Monitors a file that can be executed. """
+    """ Monitors a file that can be executed.
+
+    The resource is available when the file exists.
+    """
 
     def __init__(self, file):
         super().__init__()
