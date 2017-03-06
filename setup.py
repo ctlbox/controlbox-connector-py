@@ -52,6 +52,7 @@ setup(
     author='',
     author_email='',
     license='LGPL',
+    package_dir={'': 'src'},
     packages=['controlbox', 'controlbox.conduit', 'controlbox.config', 'controlbox.connector',
                 'controlbox.protocol', 'controlbox.support'],
     zip_safe=False,
