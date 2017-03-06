@@ -71,7 +71,7 @@ class MaintainedConnection:
         If the connection raises a connection error, it is logged, but not raised
         :return: True if the the connector was tried - the connector was not connected and available
         """
-        connector: Connector = self.connector
+        connector = self.connector
         try_open = not connector.connected and connector.available
         if try_open:
             try:
