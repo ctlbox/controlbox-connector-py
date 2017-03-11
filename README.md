@@ -21,7 +21,7 @@ The controlbox connector provides a stack of interfaces at different levels
 for communicating with objects running inside a controlbox container.
 
 The application object (both in the controller and the remote proxy) are considered
-the highest level
+the highest level.
 
 The next layer is the controlbox wrapper that provides the controlbox interface
 to that object. This covers creating new instances (with a given configuration),

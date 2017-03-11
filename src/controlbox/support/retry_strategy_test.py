@@ -35,5 +35,3 @@ class PeriodRetryStrategyTest(TestCase):
         assert_that(retry(55), is_(5))
         assert_that(retry(65), is_(-5))     # <0, restart, without accumulating the overshoot
         assert_that(retry(65), is_(60))
-
-

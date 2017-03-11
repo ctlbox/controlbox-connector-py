@@ -2,8 +2,9 @@
 a library of classes for potential reuse in different controlbox applications.
 """
 
-from controlbox.stateful.controller import LongDecoder, LongEncoder, ReadWriteSystemObject, ShortDecoder, ShortEncoder,\
-    mask
+from controlbox.protocol.controlbox import mask
+from controlbox.stateful.controller import WritableObject
+from controlbox.stateless.codecs import ShortEncoder, ShortDecoder, LongEncoder, LongDecoder
 
 """
 #todo - I'm not happy with these proxy objects - the public interface is littered with encoding/decoding methods
@@ -12,7 +13,7 @@ by moving the codec functionality externally it becomes reusable with the lightw
 """
 
 
-class ElapsedTime(ReadWriteSystemObject):
+class ElapsedTime(WritableObject):
     """
     A class that represents an elapsed time period, optionally scaled by a given value.
     As a controller object proxy, the object state is not stored here.

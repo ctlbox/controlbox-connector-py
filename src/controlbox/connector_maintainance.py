@@ -36,7 +36,7 @@ class MaintainedConnection:
         super().__init__()
         self.resource = resource        # an identifier for this managed connection
         self.connector = connector      # the connector that can provide a conduit to the endpoint
-        connector.events.add(self._connector_events) # listen to the connector
+        connector.events.add(self._connector_events)  # listen to the connector
         self.retry_strategy = retry_strategy
         self.events = events
         self.logger = log
@@ -52,7 +52,7 @@ class MaintainedConnection:
         If the connection raises a connection error, it is logged, but not raised
         :return: True if the the connector was tried - the connector was not connected and available
         """
-        connector: Connector = self.connector
+        connector = self.connector   # type Connector
         try_open = not connector.connected and connector.available
         if try_open:
             try:
@@ -187,7 +187,7 @@ class ConnectionManager:
             else:
                 previous.loop.stop()     # connector has changed
         conn = self._connections[resource_key] = self._new_maintained_connection(resource_key, connector,
-                                                                                         self.retry_period, self.events)
+                                                                                 self.retry_period, self.events)
         conn.loop.start()
 
     def _new_maintained_connection(self, resource_key, connector, timeout, events):

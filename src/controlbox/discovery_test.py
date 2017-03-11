@@ -6,7 +6,7 @@ from hamcrest import assert_that, is_
 from controlbox.conduit.discovery import ResourceAvailableEvent, ResourceUnavailableEvent
 from controlbox.discovery import ConnectorDiscovery, ManagedConnectorDiscoveries
 from controlbox.protocol.io_test import assert_delegates
-from mock_matcher import called_once_with, called_once, not_called
+from pyhamcrest.mock.matcher import called_once, called_once_with, not_called
 
 
 class ConnectorDiscoveryTest(TestCase):
@@ -49,7 +49,6 @@ class ConnectorDiscoveryTest(TestCase):
 
     def test_resource_event_available_no_connector(self):
         event = ResourceAvailableEvent(Mock(), Mock(), Mock())
-        connector = Mock()
         self.sut._create_connector = Mock(return_value=None)
         assert_that(self.sut.resource_event(event), is_(None))
         assert_that(self.sut._create_connector, is_(called_once_with(event.key, event.resource)))

@@ -1,48 +1,92 @@
 """
-Provides an object model interface to a controlbox instance.
+Provides an object oriented interface to a controlbox instance.
 The objects represent application state, and mirror the corresponding
 objects running in the controller.
 
-It is stateful.  For a stateless equivalent, see events.py and ControlboxEvents.
+It is stateful, in that the objects synchronize their state with the state in the controller as it is
+made available.
 """
-from abc import abstractmethod
+from abc import ABCMeta, abstractmethod
 
-from controlbox.protocol.async import FutureResponse
-from controlbox.protocol.controlbox import longDecode, signed_byte, unsigned_byte
-from controlbox.stateless.api import Controlbox, FailedOperationError, ProfileNotActiveError
+from controlbox.stateless.api import ProfileNotActiveError
+from controlbox.stateless.codecs import Decoder, EmptyCodec, Encoder
 from controlbox.support.events import EventSource
 from controlbox.support.mixins import CommonEqualityMixin
 
 
-timeout = 10  # long enough to allow debugging, but not infinite so that build processes will eventually terminate
-# todo - get rid of the timeout or make it part of the constructor
+class ControlboxException(Exception):
+    pass
 
 
-class BaseControlboxObject(CommonEqualityMixin, EventSource):
-    """ A Controlbox object maintains a reference to the controller, and provides deep quality
-        comparison and a source of events."""
+class ControlboxUsageException(ControlboxException):
+    """
+    Describes controlbox usage errors.
+    """
 
-    def __init__(self, controller: "TypedControlbox"):
+
+class ControlboxDetachedException(ControlboxUsageException):
+    """
+    An active connection to the controlbox instance is required.
+    """
+
+
+class ControlboxObject(CommonEqualityMixin, EventSource):
+    """A Controlbox object represents an object running in a remote controlbox instance.
+        The object maintains a reference to the controller, and provides deep equality
+        comparison and a source of events.
+
+        During typical operation, the ControlboxObject acts as a proxy
+        to the corresponding object running in the active profile or in the
+        system container of a running controlbox instance. Operations on this
+        object are reflected in the remote instance, and changes to the
+        remote instance are reflected in the proxy.
+
+        The object may be in a detached state, where changes are no longer propagated:
+        - when an instance is newly created, but not yet added to a container.
+        - when the current profile is changed, and the object is no longer part of the active profile
+        - when the connection to the controller is lost
+    """
+
+    def __init__(self):
         super().__init__()
         super(EventSource, self).__init__()
-        self._controller = controller
 
     @property
-    def controller(self)->"TypedControlbox":
+    def controller(self)-> "StatefulControlbox":
         return self._controller
 
     @controller.setter
     def controller(self, controller):
         self._controller = controller
 
-    @property
-    def type(self):
-        cls = self.__class__
-        return self.controller.types.as_id(cls)
+    def attach(self, controller):
+        self.controller = controller
+
+    def detach(self):
+        self.controller = None
+
+    def fire_object_event(self, type, data=None):
+        self.fire(type(self, data))
+
+    def ensure_attached(self) -> "StatefulControlbox":
+        return self.ensure_controller()
+
+    def ensure_controller(self):
+        """
+        ensure that we have a local controller instance.
+        The object may be in a detached state.
+        :return:
+        """
+        if self.controller is None:
+            raise ControlboxDetachedException()
+        return self.controller
+
+    def walk(self, callback):
+        callback(self)
 
 
-class ObjectReference(BaseControlboxObject):
-    """ Describes a reference to an object in the controller.
+class InstantiatedObjectDescriptor(ControlboxObject):
+    """ Describes an instantiated object in the controller.
         The reference describes the object's location (container/slot)
         the class of the object and the arguments used to configure it.
         It is used to describe the objects configured in a profile.
@@ -54,6 +98,10 @@ class ObjectReference(BaseControlboxObject):
         self.slot = slot
         self.obj_class = obj_class
         self.args = args
+        # todo - rather than referencing the construction arguments, why not
+        # actually instantiate the type and initialize it?
+        # the main reason perhaps is that the object is not a proxy to real state in
+        # the controller, but a description of the initial state of the instantiated object
 
     @property
     def id_chain(self):
@@ -69,115 +117,131 @@ class ObjectReference(BaseControlboxObject):
         return self.__str__()
 
 
-class ObjectEvent():
-    """
-    Base class for object events.
-    """
-    def __init__(self, source, data=None):
-        self.source = source
-        self.data = data
-
-
-class ObjectLifetimeEvent(ObjectEvent):
-    """ Describes events that relate to the lifetime of an object. """
-
-
-class ObjectCreatedEvent(ObjectLifetimeEvent):
-    """ Event that is posted when an object has been created. """
-    # todo - currently not used here
-
-
-class ObjectDeletedEvent(ObjectLifetimeEvent):
-    """ Event that is posted when an object has been deleted. """
-    # todo - currently not used here
-
-
-class ControlboxObject(BaseControlboxObject):
-    """  A proxy to an object in a running container. """
-    @property
-    @abstractmethod
-    def id_chain(self):
-        """  all controlbox objects have an id chain that describes their location and id in the system. """
-        raise NotImplementedError
-
-    def file_object_event(self, type, data=None):
-        self.fire(type(self, data))
-
-
-class ContainerTraits:
+class ContainerTraits(ControlboxObject, metaclass=ABCMeta):
     """
     A mixin that describes the expected behavior for container implementations.
     """
     @abstractmethod
     def id_chain_for(self, slot):
         """ retrieve the full chain for an ID composed of this container's ID and the given slot """
-        raise NotImplementedError
+    # todo ^^ is this needed? seems like a utility method that can be factored out
+    # no need to have it on each implementation.
 
+    @abstractmethod
     def item(self, slot) -> ControlboxObject:
         """
         Fetches the item at this container's location.
         """
-        raise NotImplementedError
 
+    @abstractmethod
+    def items(self) -> dict():
+        """
+        retrieves a mapping from slot number to the item
+        :return:
+        """
+
+    @abstractmethod
     def root_container(self):
         """
         Retrieve the root container from this container.
         """
-        raise NotImplementedError
+
+    def for_each(self, callback):
+        dict = self.items()
+        for k, v in dict.items():
+            callback(k, v)
+
+    def walk(self, callback):
+        """Walk all objects in the container, calling the given callback for each one. """
+        super().walk(self)
+        self.for_each(lambda k, v: v.walk(callback))
 
 
-class TypedObject:
+class TypedObject(ControlboxObject):
     """ A typed object has a type ID that is used to identify the object type to the controller. """
-    def __init__(self):
-        self.type_id = None
+
+    @property
+    def type(self):
+        """Retrieve the type of this object as a type-id."""
+        cls = self.__class__
+        return self.controller.types.as_id(cls)
 
 
-class InstantiableObject(ControlboxObject, TypedObject):
+class StatefulEvent:
     """
-    Base implementation for objects that can be instantiated.
-    It provides class methods for converting between construction parameters in python and the binary representation.
+    Base class for stateful events.
     """
-    def __init__(self, controller):
-        super().__init__(controller)
-        self.definition = None
-
-    @classmethod
-    @abstractmethod
-    def decode_definition(cls, data_block: bytes, controller, *args, **kwargs):
-        """ decodes the object's definition data block from the controller to python objects """
-        raise NotImplementedError
-
-    @classmethod
-    @abstractmethod
-    def encode_definition(cls, args) -> bytes:
-        """ encodes the construction parameters for the object into a data block """
-        raise NotImplementedError
-
-    def delete(self):
-        """ deletes the corresponding object on the controller then detaches this proxy from the controller. """
-        if self.controller:
-            self.controller.delete_object(self)
-            self.controller = None
-            # todo - should we post events on the controller instead?
-            self.fire(ObjectDeletedEvent(self))
+    def __init__(self, source, data=None):
+        self.source = source
+        self.data = data
 
 
-class ContainedObject(ControlboxObject):
+class StatefulLifetimeEvent(StatefulEvent):
+    """ Describes events that relate to the lifetime of an object. """
+
+
+class ObjectCreatedEvent(StatefulLifetimeEvent):
+    """ Event that is posted when an object has been created. """
+
+
+class ObjectDeletedEvent(StatefulLifetimeEvent):
+    """ Event that is posted when an object has been deleted. """
+
+
+class ContainedObject(TypedObject):
     """ An object in a container. Contained objects have a slot that is the id relative to the container
         the object is in. The full id_chain is the container's id plus the object's slot in the container.
+        The type of the object is used to provide a controlbox type-id. This is used
+        to infer the read/write format.
     """
 
-    def __init__(self, controller: "TypedControlbox", container: ContainerTraits, slot: int):
-        # todo - push the profile up to the root container and store controller
-        # in that.
+    def __init__(self):
+        self._container = None
+        self._slot = None
+        self._id_chain = None
+
+    @property
+    def container(self) -> ContainerTraits:
+        """Retrieve the container this object is contained in."""
+        return self._container
+
+    def is_added(self):
+        """Determine if this object has been added to a container."""
+        return self._slot is not None
+
+    def _notify_added(self, container, slot=None):
         """
-            :param controller:  The controller containing this object.
-            :param container:   The container hosting this object. Will be None if this is the root container.
-            :param slot:        The slot in the container this object is stored at
-            """
-        super().__init__(controller)
-        self.container = container
-        self.slot = slot
+        notification that this object was added to a slot in a container.
+        if the container is attached, slot will be an integer.
+        if the container is not attached, slot will be None
+        This even may be fired twice - once when the python instance
+        is added to the corresponding python container (slot is None)
+        and again when the object is added to the container in the controller.
+        :param container:
+        :param slot:
+        :return:
+        """
+        self._container = container
+        self._slot = slot
+        self._id_chain = container.id_chain_for(slot)
+        self.detach()
+        controller = container.controller
+        if controller:
+            self.attach(controller)
+
+    def _notify_removed(self, container, slot=None):
+        """Notification that this object was removed from the container.
+           When slot is not None, this means the notification was
+           received from the controller that the object was removed,
+           but it is yet to be removed from the python proxy.
+           When it is removed from the proxy, this method is called
+           with slot=None
+        """
+        self._slot = None
+        self._id_chain = None
+        self.detach()
+        if slot is None:
+            self._container = None
 
     @property
     def id_chain(self):
@@ -185,35 +249,35 @@ class ContainedObject(ControlboxObject):
         :return: The id-chain for this object
         :rtype:
         """
-        return self.container.id_chain_for(self.slot)
+        return self._id_chain
 
     def parent(self):
-        return self.container
+        return self._container
 
     def root_container(self):
-        return self.container.root_container()
+        return self._container.root_container()
 
 
-class UserObject(InstantiableObject, ContainedObject):
+class UserObject(ContainedObject):
     """ An object that is instantiated in a profile and managed by a container.
         (In contrast to system objects which are automatically instantiated by the system.)
     """
-    def __init__(self, controller: Controlbox, container: ContainerTraits, slot: int):
-        super(InstantiableObject, self).__init__(controller, container, slot)
-        super(ContainedObject, self).__init__(controller)
+    # todo - we can probably remove this since it doesn't really add anything useful
+    # after classes to distinguish system/user objects were removed.
 
-
-class SystemObject(ContainedObject):
-    def __init__(self, controller: Controlbox, container: ContainerTraits, slot: int):
-        super(ContainedObject, self).__init__(controller)
+    def delete(self):
+        """Delete the corresponding object on the controller then detach this proxy from the controller. """
+        container = self._container
+        if container:
+            container.remove(self)
 
 
 class Container(ContainedObject, ContainerTraits):
     """ A generic non-root container. Being a non-root container, the container is always contained within a parent
     container. """
 
-    def __init__(self, controller, container, slot):
-        super().__init__(controller, container, slot)
+    def __init__(self):
+        super().__init__()
         self.items = {}
 
     def id_chain_for(self, slot):
@@ -231,24 +295,76 @@ class OpenContainerTraits(ContainerTraits):
     Traits of a container that allows objects to be added and removed from it.
     """
     @abstractmethod
-    def add(self, obj: ContainedObject):
-        raise NotImplementedError()
+    def add(self, obj: ContainedObject, slot=None):
+        """
+        adds the given object to the container. The slot is determined
+         if not already given. If an object already exists at the given slot, it is removed first.
 
-    def remove(self, obj: ContainedObject):
-        raise NotImplementedError()
+        When the container is attached:
+         - the controller is asked for the next slot if slot is None
+         - the object creation request is sent to the controller.
+         - if the object is not added, an exception is thrown. otherwise the
+        object's _notify_added() method is called with the slot it was added to.
 
-    def notify_added(self, obj: ContainedObject):
+        When the container is detached:
+         - the object is added to the container and added to a list of objects to add to the controller
+
+        :param obj:
+        :param slot: the location to add the object. If None, a location is chosen by the system.
+        :return: obj
+        """
+
+    @abstractmethod
+    def remove(self, obj: ContainedObject, slot=None):
+        """
+        removes the given object from the container. if the object does not
+         exist at the given slot, an exception is raised.
+
+        When the container is attached:
+         - the controller is instructed to delete the object at the given location
+         - if the object is not removed, an exception is thrown. otherwise the
+        object's _notify_removed(container,slot) method is called with the slot,
+        signifying it was removed in the controller.
+        later the object's _notify_removed(container) method is called after the object
+        has been removed from the python container.
+
+        When the container is detached:
+         - the object is removed from the container and added to a list of objects to remove in the controller
+
+        :param obj:
+        :return:
+        """
+        # todo - I'm not sure if add/remove should function detached
+        # the main rationale is to allow a hierarchy to be created independently from a running controller
+        # an alternative implementation has these methods raise a detached exception,
+        # and the caller enqueue a command for later execution when the controller is reconnected
+
+    def _add(self, obj, slot):
+        """add the object to this python container. This does not propagate the
+        request to the controller."""
+
+    def _remove(self, obj, slot):
+        """add the object to this python container. This does not propagate the
+        request to the controller."""
+
+    def notify_added(self, obj: ContainedObject, slot):
         """ Notification from the controller that this object will be added to this container. This is called
             after the object has been added in the controller. """
+        self._add(obj, slot)
+        obj._notify_added(self, slot)
 
-    def notify_removed(self, obj: ContainedObject):
+    def notify_removed(self, obj: ContainedObject, slot):
         """ Notification from the controller that this object will be removed from this container. This is called
             prior to removing the object from the container in the controller and clearing the container member in the
             contained object. """
+        self._remove(obj, slot)
+        obj._notify_removed(self, slot)
 
 
 class RootContainerTraits(ContainerTraits):
-    """ Describes the traits of a root container implementation. """
+    """ Describes the traits of a root container implementation.
+        It has no parent
+    """
     def id_chain_for(self, slot):
         return slot,
 
@@ -268,15 +384,67 @@ class RootContainerTraits(ContainerTraits):
     # the profile could still be available in read only mode.
 
 
-class SystemProfile(BaseControlboxObject):
-    """ represents a system profile - storage for a root container and contained objects. """
+class BaseProfile(ControlboxObject):
+    """Describes the behaviour of all profiles"""
+    def __init__(self):
+        super().__init__()
+        self.profile_id = None
+        self.definitions = None
 
-    def __init__(self, controller: Controlbox, profile_id):
-        super().__init__(controller)
-        self.profile_id = profile_id
-        self._objects = dict()  # map of object id to object. These objects are proxy objects to
-        # objects in the controller
-        # todo - should we store all objects here or store them in each container?
+    def activate(self):
+        """Activate this profile on the controller and """
+        controller = self.ensure_attached()
+        controller._activate_profile(self)
+        return self
+
+    def _populate_object_definitions(self, root):
+        controller = self.ensure_attached()
+        definitions = controller.list_profile(self.profile_id)
+        return definitions  # avoid flake8 error
+
+
+class SystemProfile(BaseProfile):
+    """Represents the system profile. This profile is not created or deleted by
+    user code, but instantiated by the system."""
+
+    system_profile_id = -1
+
+    def activate(self):
+        """Activate the system profile. In practice this deactivates
+        any current user profile. """
+        super().activate()
+
+    def deactivate(self):
+        """The system profile cannot be deactivated."""
+
+    @staticmethod
+    def create(controller):
+        profile = SystemProfile()
+        profile.controller = controller
+        return profile._populate_system_profile()
+
+    def _populate_system_profile(self):
+        self.profile_id = self.system_profile_id
+        self._populate_object_definitions(SystemRootContainer())
+        return self
+
+
+class Profile(BaseProfile):
+    """Represents a profile - a profile is a persisted set of object definitions.
+    When the profile is active, the root container in the system is instantiated
+    with the contents of the profile. Objects added and removed to the root or a descendent
+    update the contents of the profile.
+
+    Internally a profile is identified by an integer ID.
+    """
+
+    def create(self):
+        """
+        creates a new user Profile
+        :return:
+        """
+        self.ensure_attached()
+        self.controller.create_profile()
 
     def __eq__(self, other):
         return other is self or \
@@ -347,7 +515,7 @@ class SystemProfile(BaseControlboxObject):
         Called by the controller to activate this profile. The profile instantiates the stub root container
         and the other stub objects currently in the profile.
         """
-        self._add(ControllerLoopContainer(self))
+        # self._add(ControllerLoopContainer(self))
         for ref in self.controller.list_objects(self):
             self.controller._instantiate_stub(
                 ref.obj_class, ref.container, ref.id_chain, ref.args)
@@ -361,45 +529,14 @@ class SystemProfile(BaseControlboxObject):
 
 class RootContainer(RootContainerTraits, OpenContainerTraits, ControlboxObject):
     """ A root container is the top-level container in a profile."""
-    # todo - add the profile that this object is contained in
-    def __init__(self, profile: SystemProfile):
+    def __init__(self, profile: Profile):
         super().__init__(profile.controller)
         self.profile = profile
 
 
 class SystemRootContainer(RootContainerTraits, ControlboxObject):
-    """ Represents the container for system objects. """
-
-    def __init__(self, controller):
-        super().__init__(controller)
-
-
-class Decoder:
-    @abstractmethod
-    def encoded_len(self):
-        """ The number of byte expected for in the encoding of this value.  """
-        raise NotImplementedError
-
-    @abstractmethod
-    def decode(self, buf):
-        raise NotImplementedError
-
-    # todo - why no decode_mask?
-    # with the current use case, this would only be used to decode
-    # the encoded command response back into an object, which isn't currently
-    # needed.
-
-
-class ValueDecoder(Decoder):
-    """ Interface expected of decoders. """
-
-    def decode(self, buf):
-        return self._decode(buf)
-
-    @abstractmethod
-    def _decode(self, buf):
-        """ Decodes a buffer into the value for this object. """
-        raise NotImplementedError
+    """ Represents the container for system objects. The user cannot instantiate
+        objects here, but the system can. """
 
 
 class ForwardingDecoder(Decoder):
@@ -411,10 +548,7 @@ class ForwardingDecoder(Decoder):
         if decoder:
             self.decoder = decoder
 
-    def encoded_len(self):
-        return self.decoder.encoded_len()
-
-    def decode(self, buf):
+    def decode(self, buf, mask=None):
         return self.decoder.decode(buf)
 
 
@@ -428,56 +562,6 @@ def make_default_mask(buf):
     return buf
 
 
-class Encoder:
-    @abstractmethod
-    def encoded_len(self):
-        """ The number of byte expected for the encoding of this value.  """
-        raise NotImplementedError
-
-    @abstractmethod
-    def encode(self, value):
-        raise NotImplementedError
-
-    @abstractmethod
-    def encode_masked(self, value):
-        raise NotImplementedError
-
-
-class ValueEncoder(Encoder):
-    """ Interface expected of encoders. """
-
-    def encode(self, value):
-        """ Encodes an object into a buffer. """
-        buf = bytearray(self.encoded_len())
-        return bytes(self._encode(value, buf))
-
-    def encode_masked(self, value):
-        """ Encodes a tuple representing a value and a mask into a a pair of byte buffers encoding the value and the
-            write mask. This is used to provide an encoding of a smaller part of the value.
-        """
-        buf, mask = self._encode_mask(value, bytearray(
-            self.encoded_len()), bytearray(self.encoded_len()))
-        return bytes(buf), bytes(mask)
-
-    def _encode_mask(self, value, buf_value, buf_mask):
-        """
-        :param value: the value and mask to encode as a sequence
-        :param buf_value: The buffer to encode the value into
-        :param buf_mask: The buffer to encode the mask into
-        :return: a tuple of the encoded value and encoded mask.
-        """
-        self._encode(value[0], buf_value)
-        self._encode(value[1], buf_mask)
-        return buf_value, buf_mask
-
-    def _encode(self, value, buf):
-        raise NotImplementedError()
-
-    @staticmethod
-    def mask_none(cls, value):
-        return value or 0, -1 if value is not None else 0
-
-
 class ForwardingEncoder(Encoder):
     """ Encoder implementation that forwards to another encoder instance. This allows the encoding implementation to
     be changed at runtime. """
@@ -487,39 +571,11 @@ class ForwardingEncoder(Encoder):
         if encoder:
             self.encoder = encoder
 
-    def encoded_len(self):
-        return self.encoder.encoded_len()
-
     def encode(self, value):
         return self.encoder.encode(value)
 
-    def encode_masked(self, value):
-        return self.encoder.encode_masked(value)
 
-
-class Codec(Encoder, Decoder):
-    pass
-
-
-class CompositeCodec(Codec):
-    """
-    Creates a codec from separate encoder/decoder instances
-    """
-    def __init__(self, encoder: Encoder, decoder: Decoder):
-        self.encoder = encoder
-        self.decoder = decoder
-
-    def encoded_len(self):
-        return self.encoder.encoded_len()
-
-    def decode(self, buf):
-        return self.decoder.decode(buf)
-
-    def encode(self, value):
-        raise self.encoder.encode(value)
-
-
-class ValueChangedEvent(ObjectEvent):
+class ValueChangedEvent(StatefulEvent):
 
     def __init__(self, source, before, after):
         super().__init__(source, (before, after))
@@ -531,369 +587,65 @@ class ValueChangedEvent(ObjectEvent):
         return self.data[1]
 
 
-class ValueObject(ContainedObject):
+class ReadableObject(ContainedObject):
+    """
+    A readable object can update the current state from the controller.
+    """
+    def read(self):
+        controller = self.ensure_attached()
+        return controller.read_value(self)
+
+    @abstractmethod
+    def _update(self, state):
+        """update the state of this object from the decoded state from the stateless layer"""
+
+
+class WritableObject(ReadableObject):
+
+    def write(self):
+        controller = self.ensure_attached()
+        controller.write(self)
+
+    @abstractmethod
+    def _value(self):
+        """Retrieve the current state of this object as expected by the stateless
+        layer."""
+
+
+class ValueObject(WritableObject):
     """
     Describes an object in the container with an associated value
-    The value is typically a decoded/application-centric representation of the data sent over the wire
-    rather than raw data bytes.
     """
-    def __init__(self, controller, container, slot):
-        super().__init__(controller, container, slot)
-        self.previous = None
+    def __init__(self):
+        super().__init__()
+        self.value = None
 
-    def _update_value(self, new_value):
+    def _update(self, new_value):
         """
         Updates the value associated with this object
         If the value has changed, a ValueChangedEvent is fired.
         """
-        p = self.previous
-        self.previous = new_value
+        p = self.value
+        self.value = new_value
         if p != new_value:
             self.fire(ValueChangedEvent(self, p, new_value))
         return new_value
 
+    def _value(self):
+        return self.value
 
-class ReadableObject(ValueObject, ValueDecoder):
+
+class DynamicContainer(EmptyCodec, OpenContainerTraits, Container):
     """
-    A readable object knows how to
+    todo - need to figure out the sequence of adding an object to the container.
+    Since an object's location is part of it's identity/construction, the python objects surely represent
+    non-created objects, which are then instantiated in the controlbox?
     """
-
-    def read(self):
-        return self.controller.read_value(self)
-
-
-class WritableObject(ValueObject, ValueDecoder, ValueEncoder):
-
-    def write(self, value):
-        fn = self.controller.write_masked_value if self.is_masked_write(
-            value) else self.controller.write_value
-        return fn(self, value)
-
-    def is_masked_write(self, value):
-        return False
-
-
-class MaskedWritableObject(WritableObject):
-
-    def is_masked_write(self, value):
-        return True
-
-
-class UnsignedLongDecoder(ValueDecoder):
-
-    def _decode(self, buf):
-        return ((((buf[3] * 256) + buf[2]) * 256) + buf[1]) * 256 + buf[0]
-
-    def encoded_len(self):
-        return 2
-
-
-class UnsignedShortDecoder(ValueDecoder):
-
-    def _decode(self, buf):
-        return ((buf[1]) * 256) + buf[0]
-
-    def encoded_len(self):
-        return 2
-
-
-class ShortEncoder(ValueEncoder):
-
-    def _encode(self, value, buf):
-        if value < 0:
-            value += 64 * 1024
-        buf[1] = unsigned_byte(int(value / 256))
-        buf[0] = value % 256
-        return buf
-
-    def encoded_len(self):
-        return 2
-
-
-class ShortDecoder(ValueDecoder):
-
-    def _decode(self, buf):
-        return (signed_byte(buf[1]) * 256) + buf[0]
-
-    def encoded_len(self):
-        return 2
-
-
-class ShortCodec(CompositeCodec):
-    def __init__(self):
-        super().__init__(ShortEncoder(), ShortDecoder())
-
-
-class ByteDecoder(ValueDecoder):
-
-    def _decode(self, buf):
-        return signed_byte(buf[0])
-
-    def encoded_len(self):
-        return 1
-
-
-class ByteEncoder(ValueEncoder):
-
-    def _encode(self, value, buf):
-        buf[0] = unsigned_byte(value)
-        return buf
-
-    def encoded_len(self):
-        return 1
-
-
-class ByteCodec(CompositeCodec):
-    def __init__(self):
-        super().__init__(ByteEncoder(), ByteDecoder())
-
-
-class LongEncoder(ValueEncoder):
-
-    def _encode(self, value, buf):
-        if value < 0:
-            value += 1 << 32
-        value = int(value)
-        for x in range(0, 4):
-            buf[x] = value % 256
-            value = int(value / 256)
-        return buf
-
-    def encoded_len(self):
-        return 4
-
-
-class UnsignedLongEncoder(LongEncoder):
-    pass
-
-
-class LongDecoder(ValueDecoder):
-
-    def _decode(self, buf):
-        return longDecode(buf)
-
-    def encoded_len(self):
-        return 4
-
-
-class LongCodec(CompositeCodec):
-    def __init__(self):
-        super().__init__(LongEncoder(), LongDecoder())
-
-
-class UnsignedLongCodec(CompositeCodec):
-    def __init__(self):
-        super().__init__(UnsignedLongEncoder(), UnsignedLongDecoder())
-
-
-class BufferDecoder(ValueDecoder):
-
-    def decode(self, buf):
-        return buf
-
-
-class BufferEncoder(ValueEncoder):
-
-    def encode(self, value):
-        return bytes(value)
-
-    def encode_masked(self, value):
-        return bytes(value[0]), bytes(value[1])
-
-
-class ReadWriteBaseObject(ReadableObject, WritableObject):
-    pass
-
-
-class ReadWriteUserObject(ReadWriteBaseObject, UserObject):
-    pass
-
-
-class ReadWriteSystemObject(ReadWriteBaseObject):
-    pass
-
-
-def mask(value, byte_count):
-    """
-    >>> mask(None, 2)
-    0
-    >>> mask(0, 2)
-    65535
-    >>> mask(0, 4)
-    4294967295
-    """
-    if value is None:
-        return 0
-    r = 0
-    for x in range(0, byte_count):
-        r = r << 8 | 0xFF
-    return r
-
-
-class ObjectDefinition:
-    """ The definition codec for an object. Converts between the byte array passed to the protocol and higher-level
-        argument types used in python code. """
-
-    @classmethod
-    @abstractmethod
-    def decode_definition(cls, data_block, controller):
-        raise NotImplementedError
-
-    @classmethod
-    @abstractmethod
-    def encode_definition(cls, arg):
-        raise NotImplementedError
-
-
-class EmptyDefinition(ObjectDefinition):
-
-    @classmethod
-    def decode_definition(cls, data_block):
-        raise ValueError("object does not require a definition block")
-
-    @classmethod
-    def encode_definition(cls, arg):
-        raise ValueError("object does not require a definition block")
-
-
-class AnyBlockDefinition(ObjectDefinition):
-
-    @classmethod
-    def decode_definition(cls, data_block):
-        return data_block
-
-    @classmethod
-    def encode_definition(cls, arg):
-        return arg or b''
-
-
-class NonEmptyBlockDefinition(ObjectDefinition):
-
-    @classmethod
-    def encode_definition(cls, arg):
-        if not arg:
-            raise ValueError("requires a non-zero length block")
-        return arg
-
-    @classmethod
-    def decode_definition(cls, data_block, controller):
-        return cls.encode_definition(data_block)
-
-
-class EncoderDecoderDefinition(ObjectDefinition):
-    """ An definition codec that delegates to a class-defined encoder and decoder. """
-    encoder = None
-    decoder = None
-
-    @classmethod
-    def encode_definition(cls, arg):
-        return cls.encoder.encode(arg)
-
-    @classmethod
-    def decode_definition(cls, data_block, controller):
-        return cls.decoder.decode(data_block)
-
-
-class ReadWriteValue(ReadWriteBaseObject):
-
-    @property
-    def value(self):
-        return self.read()
-
-    @value.setter
-    def value(self, v):
-        self.write(v)
-
-
-class DynamicContainer(EmptyDefinition, UserObject, OpenContainerTraits, Container):
-    type_id = 4
-    # todo - the application defines the type IDs, not the system, so
-    # remove this.
-
-
-class ControllerLoopState(CommonEqualityMixin):
-
-    def __init__(self, enabled=None, log_period=None, period=None):
-        if log_period is not None and (log_period < 0 or log_period > 7):
-            raise ValueError("invalid log period " + str(log_period))
-        if period is not None and (period < 0 or period > 65535):
-            raise ValueError("invalid period " + period)
-        self._enabled = enabled
-        # range from 0..7. The log period is 0 if zero, else 2^(n-1)
-        self._log_period = log_period
-        self._period = period
-
-    @staticmethod
-    def log_periods():
-        return {x: 1 << (x - 1) if x else x for x in range(8)}
-
-    @staticmethod
-    def encoded_len():
-        return 3
-
-    def decode(self, buf):
-        self._enabled = (buf[0] & 0x08) != 0
-        self._log_period = buf[0] & 0x07
-        self._period = ShortDecoder().decode(buf[1:3])
-        return self
-
-    def encode_mask(self, buf_value, buf_mask):
-        flags = 0
-        flags_mask = 0
-        if self._log_period is not None:
-            flags |= (self._log_period & 0x7)
-            flags_mask |= 7
-        if self._enabled is not None:
-            flags |= 8 if self._enabled else 0
-            flags_mask |= 8
-        buf_value[0], buf_mask[0] = flags, flags_mask
-        buf_value[1:3] = ShortEncoder().encode(self._period or 0)
-        buf_mask[1:3] = ShortEncoder().encode(mask(self._period, 2))
-        return bytes(buf_value), bytes(buf_mask)
-
-
-class ControllerLoop(MaskedWritableObject, ReadWriteUserObject, ReadWriteValue):
-    """ Represents a control loop in the ControllerLoopContainer. """
-
-    def encoded_len(self):
-        return ControllerLoopState.encoded_len()
-
-    def _encode_mask(self, value: ControllerLoopState, buf_value, buf_mask):
-        value.encode_mask(buf_value, buf_mask)
-        return buf_value, buf_mask
-
-    def _decode(self, buf):
-        return ControllerLoopState().decode(buf)
-
-
-class ControllerLoopContainer(RootContainer):
-    """
-    Describves a controller loop container.
-    """
-    def __init__(self, profile):
-        super().__init__(profile)
-        self.config_container = DynamicContainer(self.controller, self, 0)
-        self.configs = dict()
-
-    def configuration_for(self, o: ContainedObject) -> ControllerLoop:
-        if o.container != self:
-            raise ValueError()
-        return self.configurations[o.slot]
-
-    @property
-    def configurations(self):
-        """
-        :return: a dictionary mapping item slots to the ControllerLoop object that controls that loop.
-        """
-        return self.configs
-
-    def notify_added(self, obj: ContainedObject):
-        """ When an object is added, the controller also adds a config object to the config container. """
-        self.configs[obj.slot] = ControllerLoop(
-            self.controller, self.config_container, obj.slot)
-
-    def notify_removed(self, obj: ContainedObject):
-        del self.configs[obj.slot]
+    def add(self, obj: ContainedObject, slot=None):
+        raise NotImplementedError()
+
+    def remove(self, obj: ContainedObject, slot=None):
+        raise NotImplementedError()
 
 
 def fetch_dict(d: dict, k, generator):
@@ -909,10 +661,6 @@ def fetch_dict(d: dict, k, generator):
     if existing is None:
         d[k] = existing = generator(k)
     return existing
-
-
-def is_value_object(obj):
-    return obj is not None and hasattr(obj, 'decode') and hasattr(obj, '_update_value')
 
 
 class ObjectTypeMapper:
@@ -946,307 +694,3 @@ class ObjectTypeMapper:
 
     def as_id(self, clazz):
         return self._to_id.get(clazz, None)
-
-
-class TypedControlbox(Controlbox):
-    """ Provides a stateful object API to controlbox. The controller and proxy objects provides
-       the application view of the external controller.
-    :param: connector  The connector that provides the transport stream to the remote controller
-    :param: object_types  A mapper between object classes and type ids
-    """
-    def __init__(self, connector, object_types: ObjectTypeMapper):
-        """
-        :param connector:       The connector that provides the v0.3.x protocol over a conduit.
-        :param object_types:    The factory describing the object types available in the controller.
-        """
-        super().__init__(connector)
-        self._sysroot = SystemRootContainer(self)
-        # todo - populate system root with system objects
-        self._object_types = object_types
-        self._profiles = dict()
-        self._current_profile = None
-        self.log_events = EventSource()
-
-    @property
-    def types(self)->ObjectTypeMapper:
-        return self._object_types
-
-    def handle_async_log_values(self, log_info):
-        """ Handles the asynchronous logging values from each object.
-            This method looks up the corresponding object in the hierarchy and uses that to decode the log data,
-            converting it into a value. The value is then applied to the object.
-        :param values: The log_info (id_chain, log_values)
-        """
-        p = self._current_profile
-        if p is not None:
-            time, id_chain, values = log_info
-            time = UnsignedLongDecoder().decode(time)
-            object_values = []
-            for suffix_chain, data in values:
-                full_chain = id_chain + suffix_chain
-                obj = p.object_at(full_chain, True)
-                if is_value_object(obj):
-                    new_value = obj.decode(data)
-                    object_values.append((obj, new_value))
-            self._update_objects(time, object_values)
-            self.log_events.fire((time, object_values))
-
-    def _update_objects(self, time, object_values):
-        for obj, value in object_values:
-            obj._update_value(value)
-
-    def initialize(self, load_profile=True):
-        self._profiles = dict()
-        self._current_profile = None
-        if load_profile:
-            self._set_current_profile(self.active_and_available_profiles()[0])
-        self.protocol.async_log_handlers += lambda x: self.handle_async_log_values(x.value)
-
-    def full_erase(self):
-        """
-        Erases all profiles in the device.
-        """
-        available = self.active_and_available_profiles()
-        for p in available[1]:
-            self.delete_profile(p)
-
-    def read_value(self, obj: ReadableObject):
-        fn = self.protocol.read_system_value if self.is_system_object(
-            obj) else self.protocol.read_value
-        data = self._fetch_data_block(fn, obj.id_chain, obj.type, obj.encoded_len())
-        return obj.decode(data)
-
-    def write_value(self, obj: WritableObject, value):
-        fn = self.protocol.write_system_value if self.is_system_object(
-            obj) else self.protocol.write_value
-        return self._write_value(obj, value, fn)
-
-    def write_masked_value(self, obj: WritableObject, value):
-        fn = self.protocol.write_system_masked_value if self.is_system_object(
-            obj) else self.protocol.write_masked_value
-        return self._write_masked_value(obj, value, fn)
-
-    def delete_object(self, obj: ContainedObject):
-        self._delete_object_at(obj.id_chain)
-
-    def next_slot(self, container) -> int:
-        return self._handle_error(self._connector.protocol.next_slot, container.id_chain)
-
-    def create_profile(self):
-        profile_id = self._handle_error(
-            self._connector.protocol.create_profile)
-        return self.profile_for(profile_id)
-
-    def delete_profile(self, p: SystemProfile):
-        self._handle_error(self.protocol.delete_profile, p.profile_id)
-        if self._current_profile == p:
-            self._set_current_profile(None)
-        # profile may have already been deleted
-        self._profiles.pop(p.profile_id, None)
-
-    def activate_profile(self, p: SystemProfile or None):
-        """ activates the given profile. if p is None, the current profile is deactivated. """
-        self._handle_error(self.protocol.activate_profile, SystemProfile.id_for(p))
-        self._set_current_profile(p)
-
-    def active_and_available_profiles(self):
-        """
-            returns a tuple - the first element is the active profile, or None if no profile is active.
-            the second element is a sequence of profiles.
-        """
-        future = self.protocol.list_profiles()
-        data = TypedControlbox.result_from(future)
-        activate = self.profile_for(data[0], True)
-        available = tuple([self.profile_for(x) for x in data[1]])
-        return activate, available
-
-    def is_active_profile(self, p: SystemProfile):
-        active = self.active_and_available_profiles()[0]
-        return False if not active else active.profile_id == p.profile_id
-
-    def list_objects(self, p: SystemProfile):
-        future = self.protocol.list_profile(p.profile_id)
-        data = TypedControlbox.result_from(future)
-        for d in data[0]:
-            yield self._materialize_object_descriptor(*d)
-
-    def reset(self, erase_eeprom=False, hard_reset=True):
-        # todo - move this to application
-        # if erase_eeprom:  # return the id back to the pool if the device is being wiped
-        #     current_id = self.system_id().read()
-        #     id_service.return_id(current_id)
-        self._handle_error(self.protocol.reset, 1 if erase_eeprom else 0 or 2 if hard_reset else 0)
-        if erase_eeprom:
-            self._profiles.clear()
-            self._current_profile = None
-
-    def is_system_object(self, obj: ContainedObject):
-        return obj.root_container() == self._sysroot
-
-    def _write_value(self, obj: WritableObject, value, fn):
-        encoded = obj.encode(value)
-        # todo - retrieve object type
-        # also use a code as used in the bridge code to separate encoding/decoding from the objects themselves.
-        data = self._fetch_data_block(fn, obj.id_chain, 0, encoded)
-        if data != encoded:
-            raise FailedOperationError("could not write value")
-        new_value = obj.decode(data)
-        obj._update_value(new_value)
-        return value
-
-    def _write_masked_value(self, obj: WritableObject, value, fn):
-        encoded = obj.encode_masked(value)
-        data = self._fetch_data_block(fn, obj.id_chain, *encoded)
-        if not data:
-            raise FailedOperationError("could not write masked value")
-        new_value = obj.decode(data)
-        obj._update_value(new_value)
-        return new_value
-
-    def uninstantiate(self, id_chain, optional=False):
-        o = self.object_at(id_chain, optional)
-        if o is not None:
-            # notify the object's container that it has been removed
-            o.container.notify_removed(o)
-        self._current_profile._remove(id_chain)
-
-    def _delete_object_at(self, id_chain, optional=False):
-        """
-        :param id_chain:    The id chain of the object to delete
-        :param optional:    When false, deletion must succeed (the object is deleted). When false, deletion may silently
-            fail for a non-existent object.
-        """
-        self._handle_error(self.protocol.delete_object, id_chain, allow_fail=optional)
-        self.uninstantiate(id_chain, optional)
-
-    def create_object(self, obj_class, args=None, container=None, slot=None) -> InstantiableObject:
-        """
-        :param obj_class: The type of object to create
-        :param args: The constructor arguments for the object. (See documentation for each object for details.)
-        :param container: The container to create the object in, If None, the object is created in the root container
-            of the active profile.
-        :param slot:    The slot to create the object in. If None, the next available empty slot is used. If not None,
-            that specific slot is used, replacing any existing object at that location.
-        :return: The proxy object representing the created object in the controller
-        :rtype: an instance of obj_class
-        """
-        container = container or self.root_container
-        slot is not None and self._delete_object_at(
-            container.id_chain_for(slot), optional=True)
-        slot = slot if slot is not None else self.next_slot(container)
-        data = (args is not None and obj_class.encode_definition(args)) or None
-        dec = args and obj_class._decode_object_definition(data, controller=self)
-        if dec != args:
-            raise ValueError(
-                "encode/decode mismatch for value %s, encoding %s, decoding %s" % (args, data, dec))
-        return self._create_object(container, obj_class, slot, data, args)
-
-    def _create_object(self, container: Container, obj_class, slot, data: bytes, args):
-        data = data or []
-        id_chain = container.id_chain_for(slot)
-        self._handle_error(self._connector.protocol.create_object,
-                           id_chain, obj_class.type_id, data)
-        obj = self._instantiate_stub(obj_class, container, id_chain, args)
-        return obj
-
-    def _instantiate_stub(self, obj_class, container, id_chain, args):
-        """ Creates the stub object for an existing object in the controller."""
-        obj = obj_class(self, container, id_chain[-1])
-        obj.definition = args
-        self._current_profile._add(obj)
-        container.notify_added(obj)
-        return obj
-
-    @staticmethod
-    def _handle_error(fn, *args, allow_fail=False):
-        future = fn(*args)
-        error = TypedControlbox.result_from(future)
-        if error < 0 and not allow_fail:
-            raise FailedOperationError("errorcode %d" % error)
-        return error
-
-    @staticmethod
-    def _fetch_data_block(fn, *args):
-        """
-        fetches the future using the given function and then retrieves
-        the associated data block, which provides the response for the
-        associated command.
-        """
-        future = fn(*args)
-        data = TypedControlbox.result_from(future)
-        if not data:
-            raise FailedOperationError("no data")
-        return data
-
-    @property
-    def root_container(self):
-        p = self._check_current_profile()
-        return p.root
-
-    @staticmethod
-    def result_from(future: FutureResponse):
-        # todo - on timeout, unregister the future from the async protocol handler to avoid
-        # a memory leak
-        return None if future is None else future.value(timeout)
-
-    def profile_for(self, profile_id, may_be_negative=False):
-        if profile_id < 0:
-            if may_be_negative:
-                return None
-            raise ValueError("negative profile id")
-        return fetch_dict(self._profiles, profile_id, lambda x: SystemProfile(self, x))
-
-    def container_at(self, id_chain):
-        o = self.object_at(id_chain)
-        return o
-
-    def object_at(self, id_chain, optional=False):
-        p = self._check_current_profile()
-        return p.object_at(id_chain, optional)
-
-    @staticmethod
-    def container_chain_and_id(id_chain):
-        """
-        >>> TypedControlbox.container_chain_and_id(b'\x50\x51\x52')
-        (b'\x50\x51', 82)
-        """
-        return id_chain[:-1], id_chain[-1]
-
-    def _container_slot_from_id_chain(self, id_chain):
-        chain_prefix, slot = self.container_chain_and_id(id_chain)
-        container = self.container_at(chain_prefix)
-        return container, slot
-
-    def _materialize_object_descriptor(self, id_chain, obj_type, data):
-        """ converts the obj_type (int) to the object class, converts the id to a container+slot reference, and
-            decodes the data.
-        """
-        # todo - the object descriptors should be in order so that we can
-        # dynamically build the container proxy
-        container, slot = self._container_slot_from_id_chain(id_chain)
-        cls = self._object_types.from_id(obj_type)
-        args = cls.decode_definition(data, controller=self) if data else None
-        return ObjectReference(self, container, slot, cls, args)
-
-    def ref(self, obj_class, args, id_chain):
-        """ helper method to create an object reference from the class, args and id_chain. """
-        container, slot = self._container_slot_from_id_chain(id_chain)
-        return ObjectReference(self, container, slot, obj_class, args)
-
-    def _check_current_profile(self) -> SystemProfile:
-        if not self._current_profile:
-            raise FailedOperationError("no current profile")
-        return self._current_profile
-
-    # noinspection PyProtectedMember
-    def _set_current_profile(self, profile: SystemProfile):
-        if self._current_profile:
-            self._current_profile._deactivate()
-        self._current_profile = None
-        if profile:
-            self._current_profile = profile
-            profile._activate()
-
-    @property
-    def current_profile(self):
-        return self._current_profile

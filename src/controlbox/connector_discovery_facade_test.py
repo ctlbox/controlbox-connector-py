@@ -6,7 +6,7 @@ from hamcrest import assert_that, is_, not_none
 from controlbox.connector.socketconn import TCPServerEndpoint
 from controlbox.connector_discovery_facade import ControllerConnectionManager, ControllerDiscoveryFactory, \
     build_discovered_controller_connections_manager
-from mock_matcher import called_once, called_once_with
+from pyhamcrest.mock.matcher import called_once
 
 
 class ControllerConnectionManagerTest(TestCase):
@@ -30,7 +30,7 @@ class ControllerDiscoveryFactoryTest(TestCase):
         assert_that(self.sut.protocol_sniffer, is_(self.protocol_sniffer))
 
     def test_build_serial_discovery(self):
-        # todo - this isn't a sufficient test
+        # todo - this isn't a sufficient test for serial discovery. use coverage to see the missing points
         # we have coverage, but not verification (or a spec)
         serial_config = Mock()
         port = "someport"

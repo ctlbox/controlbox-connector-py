@@ -15,7 +15,7 @@ from controlbox.protocol.controlbox import ActivateProfileResponseDecoder, Comma
     DeleteProfileResponseDecoder, ListProfileResponseDecoder, ListProfilesResponseDecoder, LogValuesResponseDecoder, \
     NextFreeSlotResponseDecoder, ReadSystemValueResponseDecoder, ReadValueResponseDecoder, ResetResponseDecoder, \
     WriteMaskedValueResponseDecoder, WriteSystemValueResponseDecoder, WriteValueResponseDecoder
-from controlbox.stateless.codecs import ConnectorCodec
+from controlbox.stateless.codecs import Codec
 from controlbox.support.events import EventSource
 from controlbox.support.mixins import CommonEqualityMixin, StringerMixin
 
@@ -698,11 +698,11 @@ class ProfileNotActiveError(FailedOperationError):
     """raised when an operation that requires an active profile is attempted, and no profile is currently active."""
 
 
-class ControlboxApplicationAdapter:
+class ControlboxApplicationAdapter(Controlbox):
     """
     Higher level, stateless interface to the controlbox protocol.
     Works in terms of python objects rather than protocol buffers.
-    This is a "lightweight" version of the api in controller.py which attempts to build an
+    This is a "lightweight" version of the stateful in controller.py which attempts to build an
     object tree with distinct classes for each class type, and maintaining instances in a hiearchy
     that proxy the corresponding remote instances in the controller.
     This class does none of that, and provides an applciation-level view of the
@@ -775,7 +775,7 @@ class ControlboxApplicationAdapter:
         def next_free_slot_found(self, event: NextFreeSlotEvent):
             return event.slot
 
-    def __init__(self, controlbox: Controlbox, constructor_codec: ConnectorCodec, state_codec: ConnectorCodec):
+    def __init__(self, controlbox: Controlbox, constructor_codec: Codec, state_codec: Codec):
         """
         listens for events from the given protocol, decodes them and reposts them
         as application events.
@@ -783,6 +783,7 @@ class ControlboxApplicationAdapter:
         :param: state_codec An object that knows to encode/decode from application objects to
             the the wire format for any give type of object.
         """
+        super().__init__(controlbox.connector)
         self.controlbox = controlbox
         self.constructor_codec = constructor_codec
         self.state_codec = state_codec
@@ -800,10 +801,20 @@ class ControlboxApplicationAdapter:
         self._response_handler_wrapper(response, wrapper)
 
     def _response_handler_wrapper(self, response, wrapper):
+        """
+        Converts the response to an event and a result.
+
+        The result is set as the result of the wrapper future (if defined)
+        The event is propagated to listeners.
+
+        :param response:    The response from the lower level. This is decoded into a ControlboxApplicationEvent
+        :param wrapper:     The future wrapper from _wrap() or None if this is an unsolicited response.
+        :return:    None
+        """
         # find the command that was invoked, will be none for
         # unsolicited events
         command = wrapper.command if wrapper else None
-        event = self._event_response(response, command)
+        event = self._event_response(response, command)  # type: ControlboxApplicationEvent
         if event is not None:
             result = self._event_result(event)
             if wrapper:
@@ -818,12 +829,15 @@ class ControlboxApplicationAdapter:
 
     def _event_response(self, response: CommandResponse, command):
         """
-        Fetches the command details and passes these to a decoder, which converts them
+        Fetches the command response and passes these to an even factory, which decodes and converts them
         into an appropriate event object.
         :param response: The response from the lower level.
-        :param command_args: The arguments passed to this instance
+        :param command: A tuple (method, (args,...)) which describe the command invoked. This is used to provide the
+            command to the event factory. Will be None if this response is unsolicited.
         """
-        command_id = response.command_id
+        # passing the request and the command method/args is redundant since they encode the same information
+        # however we have these details available so no reason not to use them.
+        command_id = response.command_id    # always set, even for unsolicited responses
         request = response.parsed_request
         response = response.parsed_response
         factory = self._event_factory(command_id)  # type: ControlboxEventFactory
@@ -866,25 +880,25 @@ class ControlboxApplicationAdapter:
         data, mask = self._encode_config(object_type, config)
         if mask is not None:
             raise ValueError("object definition is not complete: %s", config)
-        return self.wrap((self.create, (id_chain, object_type, config)),
-                         self.controlbox.protocol.create_object(id_chain, object_type, data))
+        return self._wrap((self.create, (id_chain, object_type, config)),
+                          self.controlbox.protocol.create_object(id_chain, object_type, data))
 
     def delete(self, id_chain, object_type=0):
         """Delete the object at the given location in the current profile."""
-        return self.wrap((self.delete, (id_chain, object_type)),
-                         self.controlbox.protocol.delete_object(id_chain, object_type))
+        return self._wrap((self.delete, (id_chain, object_type)),
+                          self.controlbox.protocol.delete_object(id_chain, object_type))
 
     def read(self, id_chain, type=0):
         """read the state of a system object. the result is available via the returned
             future and also via the listener. """
-        return self.wrap((self.read, (id_chain, type)),
-                         self.controlbox.protocol.read_value(id_chain, type))
+        return self._wrap((self.read, (id_chain, type)),
+                          self.controlbox.protocol.read_value(id_chain, type))
 
     def read_system(self, id_chain, type=0):
         """read the state of a system object. the result is available via the returned
             future and also via the listener. """
-        return self.wrap((self.read_system, (id_chain, type)),
-                         self.controlbox.protocol.read_system_value(id_chain, type))
+        return self._wrap((self.read_system, (id_chain, type)),
+                          self.controlbox.protocol.read_system_value(id_chain, type))
 
     def write(self, id_chain, state, type=0):
         """Update the state of a given user object."""
@@ -899,7 +913,7 @@ class ControlboxApplicationAdapter:
         the case where the mask is empty"""
         buf, mask = self._encode_state(type, state)
         fn, args = self._write_args(system, id_chain, type, buf, mask)
-        return self.wrap((caller, (id_chain, state, type)), fn(args))
+        return self._wrap((caller, (id_chain, state, type)), fn(args))
 
     def _write_args(self, system, id_chain, type, buf, mask):
         fn_regular = (self.controlbox.protocol.write_system_value, self.controlbox.protocol.write_value)
@@ -909,20 +923,30 @@ class ControlboxApplicationAdapter:
         fn = fn_select[0 if system else 1]
         return fn, args
 
-    def profile_definitions(self, profile_id):
+    def list_profiles(self) -> FutureValue:
+        return self._wrap((self.list_profiles, tuple()), self.controlbox.protocol.list_profiles())
+
+    def profile_definitions(self, profile_id) -> FutureValue:
         """
         Retrieve an iterable of all the defined objects in the profile.
         """
-        return self.wrap((self.profile_definitions, (profile_id,)), self.controlbox.protocol.list_profile(profile_id))
+        return self._wrap((self.profile_definitions, (profile_id,)), self.controlbox.protocol.list_profile(profile_id))
+
+    def create_profile(self) -> FutureValue:
+        return self._wrap((self.create_profile, tuple()), self.controlbox.protocol.create_profile())
+
+    def delete_profile(self, profile_id) -> FutureValue:
+        return self._wrap((self.delete_profile, (profile_id,)), self.controlbox.protocol.delete_profile(profile_id))
 
     def current_state(self, system=False, id_chain=None):
         """
-        Retrieve an iteratable of all objects in the current profile.
+        Retrieve an iterable of all objects in the current profile.
         """
 
-    def wrap(self, command: tuple, future: FutureResponse):
-        """Wrap the protocol result future.
-        :param command: the method and the args (as a tuple)
+    def _wrap(self, command: tuple, future: FutureResponse):
+        """Wrap the protocol result future as a FutureValue. This is used to provide the decoded value as the result of
+        the future.
+        :param command: the method and the args (as method, (args, ...))
         :param future: the future result from the protocol decoder layer
         """
         wrapper = FutureValue()
@@ -932,9 +956,28 @@ class ControlboxApplicationAdapter:
         return wrapper
 
     def _wrapper_from_futures(self, futures):
+        """
+        finds the wrapper future that was added to one of the futures given
+        :param futures: The set of futures waiting of a particular command invocation.
+            This is provided by the lower layers. One of these may have a wrapper FutureValue
+            associated with it, if it is the future that was the result of a
+            command invocation from this class.
+        :return:
+        """
         wrapper = None
         for f in futures:
             if hasattr(f, 'app_wrapper'):
                 wrapper = f.app_wrapper
                 break
         return wrapper
+
+    def discard_future(self, f: FutureValue):
+        """
+        Notification from the caller that it is no longer interested in the result of this future
+        :param future:
+        :return:
+        """
+        if hasattr(f, 'app_wrapper'):
+            wrapper = f.app_wrapper
+            del f.app_wrapper
+            self.controlbox.protocol.discard_future(wrapper)

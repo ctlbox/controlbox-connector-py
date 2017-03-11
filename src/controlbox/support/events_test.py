@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock, call
 
-from hamcrest import assert_that, is_, empty, equal_to
+from hamcrest import assert_that, empty, is_
 
 from controlbox.support.events import EventSource, QueuedEventSource
 
@@ -10,13 +10,13 @@ class EventsTest(unittest.TestCase):
 
     def test_handlers_empty(self):
         sut = EventSource()
-        assert_that(sut.handlers(),is_(empty()))
+        assert_that(sut.handlers(), is_(empty()))
 
     def test_handlers_not_empty(self):
         sut = EventSource()
         handler = Mock()
         sut.add(handler)
-        assert_that(list(sut.handlers()),is_([handler]))
+        assert_that(list(sut.handlers()), is_([handler]))
 
     def test_no_listeners(self):
         sut = EventSource()

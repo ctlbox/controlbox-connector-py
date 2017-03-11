@@ -21,6 +21,7 @@ from abc import abstractmethod, ABCMeta
 from io import BufferedIOBase
 
 from controlbox.conduit.base import Conduit, ConduitStreamDecorator
+from controlbox.connector.base import ProtocolConnector
 from controlbox.protocol.async import BaseAsyncProtocolHandler, FutureResponse, Request, Response, ResponseSupport
 from controlbox.protocol.hexstream import BinaryToHexOutputStream, ChunkedHexTextInputStream, HexToBinaryInputStream
 from controlbox.protocol.io import CaptureBufferedReader
@@ -827,9 +828,30 @@ class Controlbox:
     The base interface for maintaining a connection to a controlbox instance.
     It provides access to the protocol.
     """
-    def __init__(self, connector: ControlboxProtocolV1):
+    def __init__(self, connector: ProtocolConnector):
         self._connector = connector
+
+    @property
+    def connector(self):
+        return self._connector
 
     @property
     def protocol(self) -> ControlboxProtocolV1:  # short-hand and type hint
         return self._connector.protocol
+
+
+def mask(value, byte_count):
+    """
+    >>> mask(None, 2)
+    0
+    >>> mask(0, 2)
+    65535
+    >>> mask(0, 4)
+    4294967295
+    """
+    if value is None:
+        return 0
+    r = 0
+    for x in range(0, byte_count):
+        r = r << 8 | 0xFF
+    return r

@@ -72,7 +72,7 @@ class ManagedConnectorDiscoveries:
     with the same ConnectorManager instance
     """
 
-    def __init__(self, controller_discoveries, manager:ConnectionManager):
+    def __init__(self, controller_discoveries, manager: ConnectionManager):
         """
         :param controller_discoveries  iterable of ControllerDiscovery instances used to detect endpoints.
             See build_serial_discovery and build_tcp_server_discovery
@@ -89,5 +89,3 @@ class ManagedConnectorDiscoveries:
         for d in self.discoveries:
             d.update()
         self.manager.update()
-
-

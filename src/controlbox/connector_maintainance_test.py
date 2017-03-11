@@ -6,10 +6,10 @@ from hamcrest import assert_that, calling, contains, empty, equal_to, instance_o
 
 from controlbox.connector.base import ConnectorError
 from controlbox.connector_maintainance import ConnectionManager, MaintainedConnection, MaintainedConnectionLoop
-from mock_matcher import not_called, called_once_with, called_once, called_with
 from controlbox.protocol.io_test import debug_timeout
 from controlbox.support.events import EventSource
 from controlbox.support.retry_strategy import PeriodRetryStrategy
+from pyhamcrest.mock.matcher import called_once, called_once_with, called_with, not_called
 
 
 class MaintainedConnectionTest(TestCase):
@@ -256,7 +256,8 @@ class ConnectionManagerTest(TestCase):
         sut.unavailable("res")
         # then
         assert_that(connection.loop, is_(None))
-        listener.assert_not_called()         # listener is not called by the manager - it's invoked by the MaintainedConnection object
+        listener.assert_not_called()
+        # listener is not called by the manager - it's invoked by the MaintainedConnection object
         assert_that(sut.connections, is_(empty()))
         loop.stop.assert_called_once()
 
@@ -299,4 +300,3 @@ class ConnectionManagerTest(TestCase):
         assert_that(connection.maintain, is_(called_once_with(10)))
         assert_that(connection2.maintain, is_(called_once_with(11)))
         assert_that(connection._close, is_(called_once()))
-

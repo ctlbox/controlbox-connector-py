@@ -320,6 +320,9 @@ class BaseAsyncProtocolHandler:
         self._stream_request(request)
         return future
 
+    def discard_future(self, future: FutureResponse):
+        self._unregister_future(future)
+
     def _stream_request(self, request):
         """ arranges for the request to be streamed. This implementation is synchronous, but subclasses may choose
             to send the request asynchronously. """

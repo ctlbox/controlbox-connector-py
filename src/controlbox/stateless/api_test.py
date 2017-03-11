@@ -831,7 +831,7 @@ class ControlboxApplicationAdapterTest(TestCase):
 
     def test_wrap(self):
         command, future = (), FutureResponse(Mock())
-        wrapper = self.sut.wrap(command, future)
+        wrapper = self.sut._wrap(command, future)
         assert_that(wrapper, is_(instance_of(FutureValue)))
         assert_that(wrapper.source, is_(self.sut))
         assert_that(future.app_wrapper, is_(wrapper))
@@ -860,13 +860,13 @@ class ControlboxApplicationAdapterTest(TestCase):
         command = (caller, (id_chain, state, type))
         self.sut._encode_state = Mock(return_value=(buf, mask))
         self.sut._write_args = Mock(return_value=(fn, args))
-        self.sut.wrap = Mock(return_value=wrapped)
+        self.sut._wrap = Mock(return_value=wrapped)
         result = self.sut._write(caller, system, id_chain, state, type)
         assert_that(result, is_(wrapped))
         fn.assert_called_with(args)
         self.sut._encode_state.assert_called_once_with(type, state)
         self.sut._write_args.assert_called_once_with(system, id_chain, type, buf, mask)
-        self.sut.wrap.assert_called_once_with(command, fn_result)
+        self.sut._wrap.assert_called_once_with(command, fn_result)
         fn.assert_called_once_with(args)
 
     def test_write_args(self):
