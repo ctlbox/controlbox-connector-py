@@ -1,5 +1,4 @@
 from concurrent.futures import CancelledError
-from unittest import skip
 
 from controlbox.protocol.async import FutureValue
 from controlbox.protocol.controlbox import Controlbox
@@ -9,7 +8,6 @@ from controlbox.stateful.controller import BaseProfile, ContainedObject, Contain
 from controlbox.stateless.api import ControlboxApplicationAdapter, FailedOperationError
 
 
-@skip
 class StatefulControlbox(Controlbox):
     """Provides a stateful, synchronous object API to controlbox. The controller and proxy objects provide
        the application view of the external controller.
