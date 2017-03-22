@@ -6,7 +6,7 @@ from hamcrest import assert_that, calling, equal_to, has_length, instance_of, is
 from controlbox.protocol.async import FutureResponse, FutureValue
 from controlbox.protocol.controlbox import CommandResponse, Commands
 from controlbox.stateless.api import ActivateProfileEventFactory, CommandFailedEvent, ContainerObjectsLoggedEvent, \
-    ContainerObjectsLoggedEventFactory, ControlboxApplicationAdapter, ControlboxApplicationEvent, ControllerResetEvent,\
+    ContainerObjectsLoggedEventFactory, ControlboxStateless, ControlboxApplicationEvent, ControllerResetEvent,\
     ControllerResetEventFactory, CreateObjectEventFactory, CreateProfileEventFactory, DeleteObjectEventFactory, \
     DeleteProfileEventFactory, FailedOperationError, ListProfileEventFactory, ListProfilesEventFactory, \
     NextFreeSlotEvent, NextFreeSlotEventFactory, ObjectCreatedEvent, ObjectDefinition, ObjectDeletedEvent, ObjectEvent,\
@@ -310,7 +310,7 @@ class ControlboxEventFactoryTest(TestCase):
         self.controlbox._decode_state = Mock(side_effect=[self.decode_state, self.decode_state2])
         self.controlbox._decode_object_definition = Mock(side_effect=[self.decode_state, self.decode_state2])
         self.controlbox._decode_object_value = lambda system, defn: \
-            ControlboxApplicationAdapter._decode_object_value(self.controlbox, system, defn)
+            ControlboxStateless._decode_object_value(self.controlbox, system, defn)
 
     def test_ReadValueEventFactory(self):
         self.assert_read_value(ReadValueEventFactory, False)
@@ -568,7 +568,7 @@ class ControlboxEventFactoryTest(TestCase):
 
 class ResultFromEventTest(TestCase):
     def setUp(self):
-        self.sut = ControlboxApplicationAdapter.ResultFromEvent()
+        self.sut = ControlboxStateless.ResultFromEvent()
         self.controlbox = Mock()
 
     def result(self, event):
@@ -643,7 +643,7 @@ class ControlboxApplicationAdapterTest(TestCase):
         self.controlbox = Mock()
         self.constructor_codec = Mock()
         self.state_codec = Mock()
-        self.sut = ControlboxApplicationAdapter(self.controlbox, self.constructor_codec, self.state_codec)
+        self.sut = ControlboxStateless(self.controlbox, self.constructor_codec, self.state_codec)
 
     def test__response_handler_no_futures(self):
         sut = self.sut

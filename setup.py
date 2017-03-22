@@ -54,7 +54,7 @@ setup(
     license='LGPL',
     package_dir={'': 'src'},
     packages=['controlbox', 'controlbox.conduit', 'controlbox.config', 'controlbox.connector',
-                'controlbox.protocol', 'controlbox.support'],
+                'controlbox.protocol', 'controlbox.support', 'controlbox.stateful', 'controlbox.stateless'],
     zip_safe=False,
     cmdclass={
         'apidoc': ApiDocCommand,

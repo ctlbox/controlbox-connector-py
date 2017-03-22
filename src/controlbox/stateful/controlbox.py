@@ -5,7 +5,7 @@ from controlbox.protocol.controlbox import Controlbox
 from controlbox.stateful.controller import BaseProfile, ContainedObject, Container, InstantiatedObjectDescriptor, \
     ObjectTypeMapper, Profile, ReadableObject, RootContainerTraits, SystemProfile, SystemRootContainer, WritableObject,\
     fetch_dict
-from controlbox.stateless.api import ControlboxApplicationAdapter, FailedOperationError
+from controlbox.stateless.api import ControlboxStateless, FailedOperationError
 
 
 class StatefulControlbox(Controlbox):
@@ -14,7 +14,7 @@ class StatefulControlbox(Controlbox):
     :param: stateless  The connector that provides the transport stream to the remote controller
     :param: object_types  A mapper between object classes and type ids
     """
-    def __init__(self, stateless: ControlboxApplicationAdapter, object_types: ObjectTypeMapper):
+    def __init__(self, stateless: ControlboxStateless, object_types: ObjectTypeMapper):
         """
         :param stateless:       The stateless connector that provides stateless events from the controller
         :param object_types:    The factory describing the object types available in the controller.
