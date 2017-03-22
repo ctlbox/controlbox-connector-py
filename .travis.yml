@@ -1,8 +1,9 @@
 language: python
 python:
  - "3.6"
+
 install:
-- pip install tox-travis==0.7.2
+- pip install tox-travis==0.8
 - pip install coveralls==1.1
 script: tox
 after_success: coveralls
