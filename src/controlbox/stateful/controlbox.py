@@ -2,7 +2,7 @@ from concurrent.futures import CancelledError
 
 from controlbox.protocol.async import FutureValue
 from controlbox.protocol.controlbox import Controlbox
-from controlbox.stateful.controller import ContainedObject, BaseProfile, Container, InstantiatedObjectDescriptor, \
+from controlbox.stateful.api import ContainedObject, BaseProfile, Container, InstantiatedObjectDescriptor, \
     ObjectTypeMapper, Profile, ReadableObject, RootContainerTraits, SystemProfile, SystemRootContainer, WritableObject,\
     fetch_dict
 from controlbox.stateless.api import ControlboxStateless, FailedOperationError

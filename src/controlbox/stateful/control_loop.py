@@ -1,4 +1,4 @@
-from controlbox.stateful.controller import DynamicContainer, ContainedObject, ValueObject
+from controlbox.stateful.api import DynamicContainer, ContainedObject, ValueObject
 from controlbox.stateless.codecs import Codec, ShortCodec, is_mask_complete
 from controlbox.support.mixins import CommonEqualityMixin
 

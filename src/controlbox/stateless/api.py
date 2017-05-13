@@ -702,7 +702,7 @@ class ControlboxStateless(Controlbox):
     """
     Higher level, stateless interface to the controlbox protocol.
     Works in terms of python objects rather than protocol buffers.
-    This is a "lightweight" version of the stateful in controller.py which attempts to build an
+    This is a "lightweight" version of the stateful in api.py which attempts to build an
     object tree with distinct classes for each class type, and maintaining instances in a hiearchy
     that proxy the corresponding remote instances in the controller.
     This class does none of that, and provides an applciation-level view of the

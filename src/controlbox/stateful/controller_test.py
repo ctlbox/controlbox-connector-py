@@ -7,7 +7,7 @@ from hamcrest import assert_that, equal_to, has_length, is_
 from controlbox.stateful.control_loop import ControllerLoop, ControllerLoopContainer, ControllerLoopState, \
     ControllerLoopStateCodec
 from controlbox.stateful.controlbox import StatefulControlbox
-from controlbox.stateful.controller import DynamicContainer, \
+from controlbox.stateful.api import DynamicContainer, \
     ForwardingDecoder, ForwardingEncoder, Profile, RootContainer, RootContainerTraits,\
     ValueObject, fetch_dict, ControlboxObject
 from controlbox.stateless.codecs import LongEncoder, ValueEncoder, ValueDecoder

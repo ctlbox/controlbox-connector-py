@@ -3,7 +3,7 @@ a library of classes for potential reuse in different controlbox applications.
 """
 
 from controlbox.protocol.controlbox import mask
-from controlbox.stateful.controller import WritableObject
+from controlbox.stateful.api import WritableObject
 from controlbox.stateless.codecs import ShortEncoder, ShortDecoder, LongEncoder, LongDecoder
 
 """
