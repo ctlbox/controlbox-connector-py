@@ -117,7 +117,7 @@ class IdentityCodec(Codec):
         return data
 
 
-class TypeMappingCodec:
+class TypeMappingCodecRepo:
     def __init__(self, codecs: callable):
         self.codecs = codecs
 
@@ -136,7 +136,7 @@ class TypeMappingCodec:
         return delegate
 
 
-class DictionaryMappingCodec(TypeMappingCodec):
+class DictionaryMappingCodecRepo(TypeMappingCodecRepo):
     def __init__(self, codecs: dict):
         super().__init__(self.lookup)
         self.codecs_dict = codecs

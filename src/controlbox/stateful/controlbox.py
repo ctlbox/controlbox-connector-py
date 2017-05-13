@@ -2,22 +2,38 @@ from concurrent.futures import CancelledError
 
 from controlbox.protocol.async import FutureValue
 from controlbox.protocol.controlbox import Controlbox
-from controlbox.stateful.controller import BaseProfile, ContainedObject, Container, InstantiatedObjectDescriptor, \
+from controlbox.stateful.controller import ContainedObject, BaseProfile, Container, InstantiatedObjectDescriptor, \
     ObjectTypeMapper, Profile, ReadableObject, RootContainerTraits, SystemProfile, SystemRootContainer, WritableObject,\
     fetch_dict
 from controlbox.stateless.api import ControlboxStateless, FailedOperationError
 
 
 class StatefulControlbox(Controlbox):
-    """Provides a stateful, synchronous object API to controlbox. The controller and proxy objects provide
-       the application view of the external controller.
-    :param: stateless  The connector that provides the transport stream to the remote controller
-    :param: object_types  A mapper between object classes and type ids
+    """
+    Provides a stateful, application-centric object-oriented API to controlbox.
+
+    The controller and proxy objects provide
+    the application view of the external controller. The application objects are provided
+    via a type mapper that maintains the mapping between controlbox type-ids and
+    the corresponding stateful class in python. The classes are stateful because
+    they maintain a copy of the last known state of the object, and maintain a reference
+    to the remote object's location (the controller and the object id chain.)
+    They also provide a application-centric view of the object, such as properties, methods.
+
+    The class also provides events for notification of object lifecycle and state changes.
+    Compared to the stateless layer, the events describe changes in terms of the stateful objects.
+    For example, an object created event has a reference to the stateful object, not just the controlbox id-chain
+    and the initial state, as is the case with the stateless layer.
+
+    State change events are also published. Application objects can themselves
+    describe the change in an application-specific way where it makes sense. The
+    default change event provides the old state and the new state.
+
     """
     def __init__(self, stateless: ControlboxStateless, object_types: ObjectTypeMapper):
         """
-        :param stateless:       The stateless connector that provides stateless events from the controller
-        :param object_types:    The factory describing the object types available in the controller.
+        :param: stateless  The stateless interface that this stateful one is built on.
+        :param: object_types  A mapper between stateful classes and type ids
         """
         super().__init__(stateless.controlbox.connector)
         self.stateless = stateless
@@ -37,10 +53,14 @@ class StatefulControlbox(Controlbox):
             self._set_current_profile(self.active_and_available_profiles()[0])
 
     def _attached(self):
+        """notification that the controller is attached again.
+        The current profile on the controller is attached. """
         for profile_id, profile in self._profiles.items():
             profile.attach(self)
 
     def _detached(self):
+        """notification that the container is detached.
+        Al profiles are detached. """
         for profile_id, profile in self._profiles.items():
             profile.detach()
 

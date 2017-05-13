@@ -15,6 +15,9 @@ from controlbox.support.mixins import CommonEqualityMixin
 
 
 class ControlboxException(Exception):
+    """
+    Base class for all stateful Controlbox exceptions.
+    """
     pass
 
 
@@ -31,20 +34,21 @@ class ControlboxDetachedException(ControlboxUsageException):
 
 
 class ControlboxObject(CommonEqualityMixin, EventSource):
-    """A Controlbox object represents an object running in a remote controlbox instance.
-        The object maintains a reference to the controller, and provides deep equality
-        comparison and a source of events.
+    """
+    A Controlbox object represents an object running in a remote controlbox instance.
+    The object maintains a reference to the controller, and provides deep equality
+    comparison and a source of events.
 
-        During typical operation, the ControlboxObject acts as a proxy
-        to the corresponding object running in the active profile or in the
-        system container of a running controlbox instance. Operations on this
-        object are reflected in the remote instance, and changes to the
-        remote instance are reflected in the proxy.
+    During typical operation, the ControlboxObject acts as a proxy
+    to the corresponding object running in the active profile or in the
+    system container of a running controlbox instance. Operations on this
+    object are enacted on the remote instance, and changes to the
+    remote instance are reflected in the proxy.
 
-        The object may be in a detached state, where changes are no longer propagated:
-        - when an instance is newly created, but not yet added to a container.
-        - when the current profile is changed, and the object is no longer part of the active profile
-        - when the connection to the controller is lost
+    The object may be in a detached state, where changes are no longer propagated:
+    - when an instance is newly created, but not yet added to a container.
+    - when the current profile is changed, and the object is no longer part of the active profile
+    - when the connection to the controller is lost
     """
 
     def __init__(self):
@@ -55,15 +59,12 @@ class ControlboxObject(CommonEqualityMixin, EventSource):
     def controller(self)-> "StatefulControlbox":
         return self._controller
 
-    @controller.setter
-    def controller(self, controller):
+    def attach(self, controller):
         self._controller = controller
 
-    def attach(self, controller):
-        self.controller = controller
-
     def detach(self):
-        self.controller = None
+        """Detaches this object from the controller."""
+        self._controller = None
 
     def fire_object_event(self, type, data=None):
         self.fire(type(self, data))
@@ -82,6 +83,7 @@ class ControlboxObject(CommonEqualityMixin, EventSource):
         return self.controller
 
     def walk(self, callback):
+        """Walk this tree of objects by invoking the callback for each object."""
         callback(self)
 
 
@@ -92,8 +94,8 @@ class InstantiatedObjectDescriptor(ControlboxObject):
         It is used to describe the objects configured in a profile.
         """
 
-    def __init__(self, controller, container, slot, obj_class, args):
-        super().__init__(controller)
+    def __init__(self, container, slot, obj_class, args):
+        super().__init__()
         self.container = container
         self.slot = slot
         self.obj_class = obj_class
@@ -117,7 +119,20 @@ class InstantiatedObjectDescriptor(ControlboxObject):
         return self.__str__()
 
 
-class ContainerTraits(ControlboxObject, metaclass=ABCMeta):
+class TypedObject(ControlboxObject):
+    """ A typed object has a type ID that is used to identify the object type to the controller.
+    An object's type is used by controlbox to know how to marshall the object state
+    over the wire. It it also used to associate a stateful python class with
+    the controlbox type."""
+
+    @property
+    def type(self):
+        """Retrieve the type of this object as a type-id."""
+        cls = self.__class__
+        return self.ensure_controller().types.as_id(cls)
+
+
+class ContainerTraits(TypedObject, metaclass=ABCMeta):
     """
     A mixin that describes the expected behavior for container implementations.
     """
@@ -157,21 +172,16 @@ class ContainerTraits(ControlboxObject, metaclass=ABCMeta):
         self.for_each(lambda k, v: v.walk(callback))
 
 
-class TypedObject(ControlboxObject):
-    """ A typed object has a type ID that is used to identify the object type to the controller. """
-
-    @property
-    def type(self):
-        """Retrieve the type of this object as a type-id."""
-        cls = self.__class__
-        return self.controller.types.as_id(cls)
-
-
 class StatefulEvent:
     """
     Base class for stateful events.
     """
     def __init__(self, source, data=None):
+        """
+        :param source: The primary source of the event.
+         Will typically be the controlbox object that was affected.
+        :param data:
+        """
         self.source = source
         self.data = data
 
@@ -196,6 +206,7 @@ class ContainedObject(TypedObject):
     """
 
     def __init__(self):
+        super().__init__()
         self._container = None
         self._slot = None
         self._id_chain = None
@@ -224,10 +235,11 @@ class ContainedObject(TypedObject):
         self._container = container
         self._slot = slot
         self._id_chain = container.id_chain_for(slot)
-        self.detach()
         controller = container.controller
-        if controller:
-            self.attach(controller)
+        if controller != self.controller:
+            self.detach()
+            if controller:
+                self.attach(controller)
 
     def _notify_removed(self, container, slot=None):
         """Notification that this object was removed from the container.
@@ -251,11 +263,8 @@ class ContainedObject(TypedObject):
         """
         return self._id_chain
 
-    def parent(self):
-        return self._container
-
     def root_container(self):
-        return self._container.root_container()
+        return self.container.root_container()
 
 
 class UserObject(ContainedObject):
@@ -278,6 +287,7 @@ class Container(ContainedObject, ContainerTraits):
 
     def __init__(self):
         super().__init__()
+        # map from slot to the contained object
         self.items = {}
 
     def id_chain_for(self, slot):
@@ -405,7 +415,8 @@ class BaseProfile(ControlboxObject):
 
 class SystemProfile(BaseProfile):
     """Represents the system profile. This profile is not created or deleted by
-    user code, but instantiated by the system."""
+    user code, but pre-instantiated by the application
+    when the system starts."""
 
     system_profile_id = -1
 
@@ -431,7 +442,7 @@ class SystemProfile(BaseProfile):
 
 class Profile(BaseProfile):
     """Represents a profile - a profile is a persisted set of object definitions.
-    When the profile is active, the root container in the system is instantiated
+    When a profile is active, the root container in the system is instantiated
     with the contents of the profile. Objects added and removed to the root or a descendent
     update the contents of the profile.
 
@@ -667,24 +678,19 @@ class ObjectTypeMapper:
     """
     Provides a mapping between class types in the API and type IDs sent to controlbox.
     """
-    def __init__(self, mappings: dict=None):
+    def __init__(self, mappings: dict):
         """
         :param: mappings    A dictionary mapping from type_id to class. These are additional
-            mappings that can be added in addition to the types returned from all_types()
         """
-        self._from_id = dict((self.as_id(x), x) for x in self.all_types())
-        if mappings:
-            self._from_id.update(mappings)
+        self._from_id = dict()
+        self._from_id.update(mappings)
         self._to_id = {cls: id for id, cls in self._from_id.items()}
-
-    def all_types(self):
-        raise NotImplementedError()
 
     def instance_id(self, obj: TypedObject):
         """
         Retrieves the typeid of a controlbox object.
         """
-        return obj.type_id
+        return obj.type
 
     def from_id(self, type_id) -> TypedObject:
         """
@@ -693,4 +699,5 @@ class ObjectTypeMapper:
         return self._from_id.get(type_id, None)
 
     def as_id(self, clazz):
+        """Retrieves the type_id of a given statefull class."""
         return self._to_id.get(clazz, None)

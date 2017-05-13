@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from controlbox.stateless.codecs import Codec, DictionaryMappingCodec, IdentityCodec, TypeMappingCodec
+from controlbox.stateless.codecs import Codec, DictionaryMappingCodecRepo, IdentityCodec, TypeMappingCodecRepo
 
 
 class ConnectorCodecTest(TestCase):
@@ -33,7 +33,7 @@ class TypeMappingCodecTest(TestCase):
         def mapping(type):
             return codec
 
-        sut = TypeMappingCodec(mapping)
+        sut = TypeMappingCodecRepo(mapping)
         self.assertIs(codec, mapping(5))
         self.assertEqual([10], sut.encode(5, 10))
         self.assertEqual(6, sut.decode(5, [1, 2, 3]))
@@ -45,7 +45,7 @@ class DictionaryMappingCodecTest(TestCase):
         codec.encode = lambda value: [value]
         codec.decode = lambda buf, mask: len(buf) * 2
         mapping = {5: codec}
-        self.sut = DictionaryMappingCodec(mapping)
+        self.sut = DictionaryMappingCodecRepo(mapping)
         self.assertIs(codec, mapping.get(5))
 
     def test_retrieves_codec_by_type_using_the_callable(self):
